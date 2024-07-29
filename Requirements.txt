@@ -1,3 +1,9 @@
+<<<<<<< HEAD
 pillow >= 5.4.1
 tifffile >= 2019.3.8
 numpy
+=======
+pillow >= 5.4.1
+tifffile >= 2019.3.8
+numpy
+>>>>>>> origin/main
