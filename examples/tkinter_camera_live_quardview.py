@@ -162,8 +162,14 @@ class ImageAcquisitionThread(threading.Thread):
                 output_quadview[int(height / 4):int(height / 2), int(width / 4):int(width / 2)] = \
                     unprocessed_image[1::4, 1::4]  # (1,1): bottom right rotation
                 # Display QuadView
-                quadview_image = Image.fromarray(output_quadview)                   
+                quadview_image = Image.fromarray(output_quadview) 
+                  
         return Image.fromarray(output_quadview)
+    """ insert
+
+    create a new view for passing it to LiveViewCanvas widget. 
+
+    """
             # type: (Frame) -> Image
             # no coloring, just scale down image to 8 bpp and place into PIL Image object
                 # scaled_image = frame.image_buffer >> (self._bit_depth - 8)
@@ -206,7 +212,7 @@ if __name__ == "__main__":
             root.title(camera.name)
             image_acquisition_thread = ImageAcquisitionThread(camera)
             camera_widget = LiveViewCanvas(parent=root, image_queue=image_acquisition_thread.get_output_queue())
-
+# call widget one more time
             print("Setting camera parameters...")
             camera.frames_per_trigger_zero_for_unlimited = 0
             camera.arm(2)
