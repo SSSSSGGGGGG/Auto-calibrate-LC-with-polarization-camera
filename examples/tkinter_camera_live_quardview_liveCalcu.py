@@ -89,34 +89,6 @@ class LiveViewCanvas(tk.Canvas):
 
 
 
-
-# class ColorBarCanvas(tk.Canvas):
-#     def __init__(self, parent, width=20, height=600):
-#         super().__init__(parent, width=width, height=height)
-#         self.pack(side="right", fill="both", expand=True)
-#         self.create_color_bar(width, height)
-
-#     def create_color_bar(self, width, height):
-#         # Create a vertical gradient based on the colormap
-#         gradient = np.linspace(0, 1, height)  # Create an array from 0 to 1
-
-#         # Apply the colormap to the gradient
-#         color_image = plt.get_cmap('seismic')(gradient)  # This gives an array of shape (height, 4)
-
-#         # Convert to 8-bit unsigned integer (0-255 range)
-#         color_image = (color_image[:, :3] * 255).astype(np.uint8)  # Only take RGB channels
-
-#         # Draw the color bar on the canvas
-#         for i in range(height):
-#             color = tuple(color_image[i])  # Get RGB tuple
-#             self.create_rectangle(0, i, width, i+1, fill=self.rgb_to_hex(color), outline='')
-
-#     def rgb_to_hex(self, rgb):
-#         """Convert an RGB tuple to a hex string."""
-#         return f'#{rgb[0]:02x}{rgb[1]:02x}{rgb[2]:02x}'
-
-
-
 """ ImageAcquisitionThread
 
 This class derives from threading.Thread and is given a TLCamera instance during initialization. When started, the 
@@ -211,14 +183,15 @@ class ImageAcquisitionThread(threading.Thread):
                 H_norm = unprocessed_image[1::4, 1::4] / 255
                 
                 total = V_norm + A_norm + D_norm + H_norm
-                S0 = total / total  # S0 normalization
-                S1 = (V_norm - H_norm) / (0.5 * total)  # S1 normalization
-                S2 = (A_norm - D_norm) / (0.5 * total)  # S2 normalization
-                
+                S0 = total / 2  # S0 normalization
+                S1 = (V_norm - H_norm)# / (0.5 * total)  # S1 normalization
+                S2 = (A_norm - D_norm)# / (0.5 * total)  # S2 normalization
+                Dop=np.sqrt(S1**2+S2**2)/S0
                 # Apply the colormap
-                S0_colored = self.apply_colormap(S0)
+                S0_colored = self.apply_colormap_hot(S0)
                 S1_colored = self.apply_colormap(S1)
                 S2_colored = self.apply_colormap(S2)
+                Dop_colored = self.apply_colormap_hot(Dop)
                 
                 # Create an output quadview image
                 output_quadview = np.zeros((int(height/2), int(width/2), 3), dtype=np.uint8)
@@ -227,9 +200,9 @@ class ImageAcquisitionThread(threading.Thread):
                 # Top Right Quadrant = S1
                 output_quadview[0:int(height / 4), int(width / 4):int(width / 2)] = S1_colored
                 # Bottom Left Quadrant = S2
-                output_quadview[int(height / 4):int(height / 2), 0:int(width / 4)] = S2_colored  # Ensure grayscale
+                output_quadview[int(height / 4):int(height / 2), 0:int(width / 4)] = Dop_colored  # Ensure grayscale
                 # Bottom Right Quadrant = S3
-                output_quadview[int(height / 4):int(height / 2), int(width / 4):int(width / 2)] = S0_colored  # Ensure grayscale
+                output_quadview[int(height / 4):int(height / 2), int(width / 4):int(width / 2)] = S2_colored  # Ensure grayscale
                 
                 # Create and add the seismic color bar
                 color_bar_height = int(height / 2)  # Height of the color bar
@@ -261,6 +234,18 @@ class ImageAcquisitionThread(threading.Thread):
             # Normalize the data to the range [0, 1]
             # Use the 'seismic' colormap
         cmap = plt.get_cmap('seismic')
+        
+        # Apply the colormap without normalizing the data again
+        colored_image = cmap(data)  # This gives a float array in the range [0, 1]
+    
+        # Convert to uint8 for image display
+        colored_image_uint8 = (colored_image[:, :, :3] * 255).astype(np.uint8)
+        return Image.fromarray(colored_image_uint8)
+    
+    def apply_colormap_hot(self, data):
+            # Normalize the data to the range [0, 1]
+            # Use the 'seismic' colormap
+        cmap = plt.get_cmap('hot')
         
         # Apply the colormap without normalizing the data again
         colored_image = cmap(data)  # This gives a float array in the range [0, 1]
@@ -331,8 +316,8 @@ if __name__ == "__main__":
 
             tk.Label(root, text="S1", font=big_font, fg="white", bg="black").place(x=canvas_width*3/2, y=0)
             tk.Label(root, text="S0", font=big_font, fg="white", bg="black").place(x=canvas_width, y=0)
-            tk.Label(root, text="S3", font=big_font, fg="white", bg="black").place(x=canvas_width*3/2, y=canvas_height/2)
-            tk.Label(root, text="S2", font=big_font, fg="white", bg="black").place(x=canvas_width, y=canvas_height/2)
+            tk.Label(root, text="S2", font=big_font, fg="white", bg="black").place(x=canvas_width*3/2, y=canvas_height/2)
+            tk.Label(root, text="DoP", font=big_font, fg="white", bg="black").place(x=canvas_width, y=canvas_height/2)
             
             
             
