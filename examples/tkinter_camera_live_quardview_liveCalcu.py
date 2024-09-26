@@ -91,21 +91,30 @@ class LiveViewCanvas(tk.Canvas):
 
 
 # class ColorBarCanvas(tk.Canvas):
-#     def __init__(self, parent, width=50, height=300):
-#         tk.Canvas.__init__(self, parent, width=width, height=height)
-#         self.pack(side="left", fill="both", expand=False)
+#     def __init__(self, parent, width=20, height=600):
+#         super().__init__(parent, width=width, height=height)
+#         self.pack(side="right", fill="both", expand=True)
 #         self.create_color_bar(width, height)
 
 #     def create_color_bar(self, width, height):
-#         # Create a gradient (from blue to red)
-#         color_gradient = np.linspace(0, 1, height).reshape(height, 1) * 255
-#         color_image = np.zeros((height, width, 3), dtype=np.uint8)
-#         color_image[:, :, 0] = color_gradient  # Red channel
-#         color_image[:, :, 2] = 255 - color_gradient  # Blue channel
-        
-#         img = Image.fromarray(color_image)
-#         self._color_bar = ImageTk.PhotoImage(image=img)
-#         self.create_image(0, 0, image=self._color_bar, anchor='nw')
+#         # Create a vertical gradient based on the colormap
+#         gradient = np.linspace(0, 1, height)  # Create an array from 0 to 1
+
+#         # Apply the colormap to the gradient
+#         color_image = plt.get_cmap('seismic')(gradient)  # This gives an array of shape (height, 4)
+
+#         # Convert to 8-bit unsigned integer (0-255 range)
+#         color_image = (color_image[:, :3] * 255).astype(np.uint8)  # Only take RGB channels
+
+#         # Draw the color bar on the canvas
+#         for i in range(height):
+#             color = tuple(color_image[i])  # Get RGB tuple
+#             self.create_rectangle(0, i, width, i+1, fill=self.rgb_to_hex(color), outline='')
+
+#     def rgb_to_hex(self, rgb):
+#         """Convert an RGB tuple to a hex string."""
+#         return f'#{rgb[0]:02x}{rgb[1]:02x}{rgb[2]:02x}'
+
 
 
 """ ImageAcquisitionThread
@@ -190,7 +199,8 @@ class ImageAcquisitionThread(threading.Thread):
     # Generate a different image for canvas 2 (e.g., another part of the image)
         width = frame.image_buffer.shape[1]
         height = frame.image_buffer.shape[0]
-        with PolarizationProcessorSDK() as polarization_sdk:           
+    
+        with PolarizationProcessorSDK() as polarization_sdk:
             with polarization_sdk.create_polarization_processor() as polarization_processor:
                 unprocessed_image = frame.image_buffer.reshape(int(height), int(width))
                 unprocessed_image = unprocessed_image >> (self._bit_depth - 8)  # this is the raw image data
@@ -199,39 +209,65 @@ class ImageAcquisitionThread(threading.Thread):
                 A_norm = unprocessed_image[0::4, 1::4] / 255
                 D_norm = unprocessed_image[1::4, 0::4] / 255
                 H_norm = unprocessed_image[1::4, 1::4] / 255
-                total = V_norm + A_norm + D_norm + H_norm
                 
-                # Normalize S0 and S1 for colormap application
-                S0 = total / total
-                S1 = (V_norm - H_norm) / (0.5 * total)
-    
+                total = V_norm + A_norm + D_norm + H_norm
+                S0 = total / total  # S0 normalization
+                S1 = (V_norm - H_norm) / (0.5 * total)  # S1 normalization
+                S2 = (A_norm - D_norm) / (0.5 * total)  # S2 normalization
+                
                 # Apply the colormap
                 S0_colored = self.apply_colormap(S0)
                 S1_colored = self.apply_colormap(S1)
-    
+                S2_colored = self.apply_colormap(S2)
+                
                 # Create an output quadview image
                 output_quadview = np.zeros((int(height/2), int(width/2), 3), dtype=np.uint8)
                 # Top Left Quadrant = S0
                 output_quadview[0:int(height / 4), 0:int(width / 4)] = S0_colored
                 # Top Right Quadrant = S1
                 output_quadview[0:int(height / 4), int(width / 4):int(width / 2)] = S1_colored
-                # Bottom Left Quadrant = D
-                output_quadview[int(height / 4):int(height / 2), 0:int(width / 4)] = S0_colored  # Ensure grayscale
-                # Bottom Right Quadrant = H
-                output_quadview[int(height / 4):int(height / 2), int(width / 4):int(width / 2)] = S1_colored  # Ensure grayscale
+                # Bottom Left Quadrant = S2
+                output_quadview[int(height / 4):int(height / 2), 0:int(width / 4)] = S2_colored  # Ensure grayscale
+                # Bottom Right Quadrant = S3
+                output_quadview[int(height / 4):int(height / 2), int(width / 4):int(width / 2)] = S0_colored  # Ensure grayscale
                 
-        return Image.fromarray(output_quadview)
+                # Create and add the seismic color bar
+                color_bar_height = int(height / 2)  # Height of the color bar
+                color_bar_width = 40   # Width of the color bar
+                color_bar = np.zeros((color_bar_height, color_bar_width, 3), dtype=np.uint8)
+            
+                # Create the seismic colormap using Matplotlib
+                colormap = plt.get_cmap("seismic")
+            
+                # Create a vertical gradient based on the colormap
+                gradient = np.linspace(1,0, color_bar_height)  # Create an array from 0 to 1
+
+                # Apply the colormap to the gradient
+                color_image = plt.get_cmap('seismic')(gradient)  # This gives an array of shape (height, 4)
+                # Convert to RGB (discarding the alpha channel) and scale to 0-255
+                color_bar = (color_image[:, :3] * 255).astype(np.uint8)  # Shape will be (height, 3)
+                
+                # Reshape to (color_bar_height, color_bar_width, 3)
+                color_bar_3d = np.tile(color_bar[:, np.newaxis, :], (1, color_bar_width, 1))
+                
+                # Combine the quadview image and the color bar
+                output_quadview_with_colorbar = np.hstack((output_quadview, color_bar_3d))
+            
+        return Image.fromarray(output_quadview_with_colorbar)
+
+   
 
     def apply_colormap(self, data):
-        # Normalize the data to the range [0, 1]
-        data_normalized = (data - np.min(data)) / (np.max(data) - np.min(data) + 1e-8)  # Adding a small epsilon to avoid division by zero
-    
-        # Use the desired colormap (e.g., 'RdBu')
-        cmap = plt.get_cmap('RdBu')  # Change 'RdBu' to your desired colormap
-        colored_image = cmap(data_normalized)[:, :, :3] * 255  # Convert to 0-255 range and keep RGB channels
+            # Normalize the data to the range [0, 1]
+            # Use the 'seismic' colormap
+        cmap = plt.get_cmap('seismic')
         
-        # Convert to uint8
-        return colored_image.astype(np.uint8)
+        # Apply the colormap without normalizing the data again
+        colored_image = cmap(data)  # This gives a float array in the range [0, 1]
+    
+        # Convert to uint8 for image display
+        colored_image_uint8 = (colored_image[:, :, :3] * 255).astype(np.uint8)
+        return Image.fromarray(colored_image_uint8)
 
 
     def run(self):
@@ -272,18 +308,33 @@ if __name__ == "__main__":
             root.title(camera.name)
 
             image_acquisition_thread = ImageAcquisitionThread(camera)
-
-            # Create two canvas widgets with smaller fixed sizes
-            canvas1 = LiveViewCanvas(parent=root, image_queue=image_acquisition_thread.get_output_queue1(), canvas_width=900, canvas_height=900)
+            
+            canvas_width, canvas_height=600,600
+            # Create two canvas widgets with fixed sizes
+            canvas1 = LiveViewCanvas(parent=root, image_queue=image_acquisition_thread.get_output_queue1(), canvas_width=600, canvas_height=600)
             canvas2 = LiveViewCanvas(parent=root, image_queue=image_acquisition_thread.get_output_queue2(), canvas_width=600, canvas_height=600)
-            big_font = font.Font(size=16)
-            # Pack canvases explicitly
+            
+            # Create the color bar canvas
+            # colorbar = ColorBarCanvas(parent=root)
+
+            # Pack canvases and colorbar
             canvas1.pack(side="left", fill="both", expand=True)
             canvas2.pack(side="right", fill="both", expand=True)
-            tk.Label(root, text="V", font=big_font,fg="white", bg="black").place(x=10, y=10)
-            tk.Label(root, text="H", font=big_font,fg="white", bg="black").place(x=460, y=460)
-            tk.Label(root, text="D", font=big_font,fg="white", bg="black").place(x=10, y=460)
-            tk.Label(root, text="A", font=big_font,fg="white", bg="black").place(x=460, y=10)
+            # colorbar.pack(side="right", fill="x")
+            
+
+            big_font = font.Font(size=16)
+            tk.Label(root, text="V", font=big_font, fg="white", bg="black").place(x=0, y=0)
+            tk.Label(root, text="H", font=big_font, fg="white", bg="black").place(x=canvas_width/2, y=canvas_height/2)
+            tk.Label(root, text="D", font=big_font, fg="white", bg="black").place(x=0, y=canvas_height/2)
+            tk.Label(root, text="A", font=big_font, fg="white", bg="black").place(x=canvas_width/2, y=0)
+
+            tk.Label(root, text="S1", font=big_font, fg="white", bg="black").place(x=canvas_width*3/2, y=0)
+            tk.Label(root, text="S0", font=big_font, fg="white", bg="black").place(x=canvas_width, y=0)
+            tk.Label(root, text="S3", font=big_font, fg="white", bg="black").place(x=canvas_width*3/2, y=canvas_height/2)
+            tk.Label(root, text="S2", font=big_font, fg="white", bg="black").place(x=canvas_width, y=canvas_height/2)
+            
+            
             
             print("Setting camera parameters...")
             camera.frames_per_trigger_zero_for_unlimited = 0
@@ -303,5 +354,7 @@ if __name__ == "__main__":
             print("Closing resources...")
 
     print("App terminated. Goodbye!")
+
+
 
 
