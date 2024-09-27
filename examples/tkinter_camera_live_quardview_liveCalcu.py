@@ -149,19 +149,18 @@ class ImageAcquisitionThread(threading.Thread):
                 unprocessed_image = frame.image_buffer.reshape(int(height), int(width))
                 unprocessed_image = frame.image_buffer >> (self._bit_depth - 8)  # this is the raw image data
                 
-                output_quadview = np.zeros(shape=(int(height/2), int(width/2)))  # initialize array for QuadView data
-                # Top Left Quadrant =
-                output_quadview[0:int(height / 4), 0:int(width / 4)] = \
-                    unprocessed_image[0::4, 0::4]  # (0,0): top left rotation == camera_polar_phase
-                # Top Right Quadrant =
-                output_quadview[0:int(height / 4), int(width / 4):int(width / 2)] = \
-                    unprocessed_image[0::4, 1::4]  # (0,1): top right rotation
-                # Bottom Left Quadrant =
-                output_quadview[int(height / 4):int(height / 2), 0:int(width / 4)] = \
-                    unprocessed_image[1::4, 0::4]  # (1,0): bottom left rotation
-                # Bottom Right Quadrant =
-                output_quadview[int(height / 4):int(height / 2), int(width / 4):int(width / 2)] = \
-                    unprocessed_image[1::4, 1::4]  # (1,1): bottom right rotation
+                output_quadview = np.zeros((int(height), int(width)))
+                output_quadview[0:int(height / 2), 0:int(width / 2)] = \
+                    unprocessed_image[0::2, 0::2]  # (0,0): top left rotation == camera_polar_phase
+                # Top Right Quadrant =A
+                output_quadview[0:int(height / 2), int(width / 2):int(width )] = \
+                    unprocessed_image[0::2, 1::2]  # (0,1): top right rotation
+                # Bottom Left Quadrant =D
+                output_quadview[int(height / 2):int(height), 0:int(width / 2)] = \
+                    unprocessed_image[1::2, 0::2]  # (1,0): bottom left rotation
+                # Bottom Right Quadrant =H
+                output_quadview[int(height / 2):int(height ), int(width / 2):int(width )] = \
+                        unprocessed_image[1::2, 1::2]  # (1,1): bottom right rotation
                 # Display QuadView
                 quadview_image = Image.fromarray(output_quadview) 
                   
@@ -177,15 +176,15 @@ class ImageAcquisitionThread(threading.Thread):
                 unprocessed_image = frame.image_buffer.reshape(int(height), int(width))
                 unprocessed_image = unprocessed_image >> (self._bit_depth - 8)  # this is the raw image data
                 
-                V_norm = unprocessed_image[0::4, 0::4] / 255
-                A_norm = unprocessed_image[0::4, 1::4] / 255
-                D_norm = unprocessed_image[1::4, 0::4] / 255
-                H_norm = unprocessed_image[1::4, 1::4] / 255
+                V_norm = unprocessed_image[0::2, 0::2] / 255
+                A_norm = unprocessed_image[0::2, 1::2] / 255
+                D_norm = unprocessed_image[1::2, 0::2] / 255
+                H_norm = unprocessed_image[1::2, 1::2] / 255
                 
                 total = V_norm + A_norm + D_norm + H_norm
                 S0 = total / 2  # S0 normalization
-                S1 = (V_norm - H_norm)# / (0.5 * total)  # S1 normalization
-                S2 = (A_norm - D_norm)# / (0.5 * total)  # S2 normalization
+                S1 = (V_norm - H_norm) / (0.5 * total)  # S1 normalization
+                S2 = (A_norm - D_norm) / (0.5 * total)  # S2 normalization
                 Dop=np.sqrt(S1**2+S2**2)/S0
                 # Apply the colormap
                 S0_colored = self.apply_colormap_hot(S0)
@@ -194,61 +193,68 @@ class ImageAcquisitionThread(threading.Thread):
                 Dop_colored = self.apply_colormap_hot(Dop)
                 
                 # Create an output quadview image
-                output_quadview = np.zeros((int(height/2), int(width/2), 3), dtype=np.uint8)
+                output_quadview = np.zeros((int(height), int(width), 3), dtype=np.uint8)
                 # Top Left Quadrant = S0
-                output_quadview[0:int(height / 4), 0:int(width / 4)] = S0_colored
+                output_quadview[0:int(height / 2), 0:int(width / 2)] = S0_colored
                 # Top Right Quadrant = S1
-                output_quadview[0:int(height / 4), int(width / 4):int(width / 2)] = S1_colored
-                # Bottom Left Quadrant = S2
-                output_quadview[int(height / 4):int(height / 2), 0:int(width / 4)] = Dop_colored  # Ensure grayscale
-                # Bottom Right Quadrant = S3
-                output_quadview[int(height / 4):int(height / 2), int(width / 4):int(width / 2)] = S2_colored  # Ensure grayscale
+                output_quadview[0:int(height / 2), int(width / 2):int(width )] = S1_colored
+                # Bottom Left Quadrant = dop
+                output_quadview[int(height / 2):int(height), 0:int(width / 2)] = Dop_colored  # Ensure grayscale
+                # Bottom Right Quadrant = s2
+                output_quadview[int(height / 2):int(height ), int(width / 2):int(width )] = S2_colored  # Ensure grayscale
                 
                 # Create and add the seismic color bar
-                color_bar_height = int(height / 2)  # Height of the color bar
+                color_bar_height = int(height)  # Height of the color bar
                 color_bar_width = 40   # Width of the color bar
                 color_bar = np.zeros((color_bar_height, color_bar_width, 3), dtype=np.uint8)
-            
+                
+                border = np.ones((color_bar_height, 15, 3), dtype=np.uint8)*255
                 # Create the seismic colormap using Matplotlib
                 colormap = plt.get_cmap("seismic")
+                colormap_h = plt.get_cmap("hot")
                 # Create a vertical gradient based on the colormap
                 gradient = np.linspace(1,0, color_bar_height)  # Create an array from 0 to 1
                 # Apply the colormap to the gradient
-                color_image = plt.get_cmap('seismic')(gradient)  # This gives an array of shape (height, 4)
+                color_image = plt.get_cmap('seismic')(gradient)
+                color_image_h = plt.get_cmap('hot')(gradient)# This gives an array of shape (height, 4)
                 # Convert to RGB (discarding the alpha channel) and scale to 0-255
-                color_bar = (color_image[:, :3] * 255).astype(np.uint8)  # Shape will be (height, 3)              
+                color_bar = (color_image[:, :3] * 255).astype(np.uint8)
+                color_bar_h = (color_image_h[:, :3] * 255).astype(np.uint8)# Shape will be (height, 3)              
                 # Reshape to (color_bar_height, color_bar_width, 3)
-                color_bar_3d = np.tile(color_bar[:, np.newaxis, :], (1, color_bar_width, 1))            
+                color_bar_3d = np.tile(color_bar[:, np.newaxis, :], (1, color_bar_width, 1)) 
+                color_bar_3d_h = np.tile(color_bar_h[:, np.newaxis, :], (1, color_bar_width, 1)) 
+                
+                S0_Dop=np.vstack((output_quadview[0:int(height / 2), 0:int(width / 2)],output_quadview[int(height / 2):int(height), 0:int(width / 2)]))
+                S1_S2=np.vstack((output_quadview[0:int(height / 2), int(width / 2):int(width )] ,output_quadview[int(height / 2):int(height ), int(width / 2):int(width )]))
                 # Combine the quadview image and the color bar
-                output_quadview_with_colorbar = np.hstack((output_quadview, color_bar_3d))
+                output_quadview_with_colorbar = np.hstack((S0_Dop,border,color_bar_3d_h,border,S1_S2, border,color_bar_3d))
             
         return Image.fromarray(output_quadview_with_colorbar)
 
    
 
     def apply_colormap(self, data):
-            # Normalize the data to the range [0, 1]
-            # Use the 'seismic' colormap
+        matrix = np.clip(data, -1, 1)
+        normalized_matrix = (matrix + 1) /2
         cmap = plt.get_cmap('seismic')
         
         # Apply the colormap without normalizing the data again
-        colored_image = cmap(data)  # This gives a float array in the range [0, 1]
+        colored_image = cmap(normalized_matrix)  # This gives a float array in the range [0, 1]
     
         # Convert to uint8 for image display
         colored_image_uint8 = (colored_image[:, :, :3] * 255).astype(np.uint8)
-        return Image.fromarray(colored_image_uint8)
+        return colored_image_uint8
     
     def apply_colormap_hot(self, data):
-            # Normalize the data to the range [0, 1]
-            # Use the 'seismic' colormap
+        matrix = np.clip(data, 0, 1)
         cmap = plt.get_cmap('hot')
         
         # Apply the colormap without normalizing the data again
-        colored_image = cmap(data)  # This gives a float array in the range [0, 1]
+        colored_image = cmap(matrix)  # This gives a float array in the range [0, 1]
     
         # Convert to uint8 for image display
         colored_image_uint8 = (colored_image[:, :, :3] * 255).astype(np.uint8)
-        return Image.fromarray(colored_image_uint8)
+        return colored_image_uint8
 
 
     def run(self):
