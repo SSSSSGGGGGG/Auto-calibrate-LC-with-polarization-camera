@@ -111,8 +111,8 @@ class ImageAcquisitionThread(threading.Thread):
             self._is_color = False
         else:
             self._mono_to_color_sdk = MonoToColorProcessorSDK()
-            self._image_width = self._camera.image_width_pixels
-            self._image_height = self._camera.image_height_pixels
+            self._image_width = self._camera.image_width_pixels*2
+            self._image_height = self._camera.image_height_pixels*2
             self._mono_to_color_processor = self._mono_to_color_sdk.create_mono_to_color_processor(
                 SENSOR_TYPE.BAYER,
                 self._camera.color_filter_array_phase,
@@ -149,21 +149,34 @@ class ImageAcquisitionThread(threading.Thread):
                 unprocessed_image = frame.image_buffer.reshape(int(height), int(width))
                 unprocessed_image = frame.image_buffer >> (self._bit_depth - 8)  # this is the raw image data
                 
-                output_quadview = np.zeros(shape=(int(height/2), int(width/2)))  # initialize array for QuadView data
-                # Top Left Quadrant =
-                output_quadview[0:int(height / 4), 0:int(width / 4)] = \
-                    unprocessed_image[0::4, 0::4]  # (0,0): top left rotation == camera_polar_phase
-                # Top Right Quadrant =
-                output_quadview[0:int(height / 4), int(width / 4):int(width / 2)] = \
-                    unprocessed_image[0::4, 1::4]  # (0,1): top right rotation
-                # Bottom Left Quadrant =
-                output_quadview[int(height / 4):int(height / 2), 0:int(width / 4)] = \
-                    unprocessed_image[1::4, 0::4]  # (1,0): bottom left rotation
-                # Bottom Right Quadrant =
-                output_quadview[int(height / 4):int(height / 2), int(width / 4):int(width / 2)] = \
-                    unprocessed_image[1::4, 1::4]  # (1,1): bottom right rotation
+                # output_quadview = np.zeros(shape=(int(height/2), int(width/2)))  # initialize array for QuadView data
+                # # Top Left Quadrant =
+                # output_quadview[0:int(height / 4), 0:int(width / 4)] = \
+                #     unprocessed_image[0::4, 0::4]  # (0,0): top left rotation == camera_polar_phase
+                # # Top Right Quadrant =
+                # output_quadview[0:int(height / 4), int(width / 4):int(width / 2)] = \
+                #     unprocessed_image[0::4, 1::4]  # (0,1): top right rotation
+                # # Bottom Left Quadrant =
+                # output_quadview[int(height / 4):int(height / 2), 0:int(width / 4)] = \
+                #     unprocessed_image[1::4, 0::4]  # (1,0): bottom left rotation
+                # # Bottom Right Quadrant =
+                # output_quadview[int(height / 4):int(height / 2), int(width / 4):int(width / 2)] = \
+                #     unprocessed_image[1::4, 1::4]  # (1,1): bottom right rotation
+                # Top Left Quadrant =V
+                output_quadview = np.zeros((int(height), int(width)))
+                output_quadview[0:int(height / 2), 0:int(width / 2)] = \
+                    unprocessed_image[0::2, 0::2]  # (0,0): top left rotation == camera_polar_phase
+                # Top Right Quadrant =A
+                output_quadview[0:int(height / 2), int(width / 2):int(width )] = \
+                    unprocessed_image[0::2, 1::2]  # (0,1): top right rotation
+                # Bottom Left Quadrant =D
+                output_quadview[int(height / 2):int(height), 0:int(width / 2)] = \
+                    unprocessed_image[1::2, 0::2]  # (1,0): bottom left rotation
+                # Bottom Right Quadrant =H
+                output_quadview[int(height / 2):int(height ), int(width / 2):int(width )] = \
+                        unprocessed_image[1::2, 1::2]  # (1,1): bottom right rotation
                 # Display QuadView
-                quadview_image = Image.fromarray(output_quadview) 
+                 
                   
         return Image.fromarray(output_quadview)
 
@@ -317,15 +330,15 @@ if __name__ == "__main__":
             
 
             big_font = font.Font(size=16)
-            tk.Label(root, text="V", font=big_font, fg="white", bg="black").place(x=0, y=0)
-            tk.Label(root, text="H", font=big_font, fg="white", bg="black").place(x=canvas_width/2, y=canvas_height/2)
-            tk.Label(root, text="D", font=big_font, fg="white", bg="black").place(x=0, y=canvas_height/2)
-            tk.Label(root, text="A", font=big_font, fg="white", bg="black").place(x=canvas_width/2, y=0)
+            tk.Label(root, text="V", font=big_font, fg="white", bg="black").place(x=5, y=5)
+            tk.Label(root, text="H", font=big_font, fg="white", bg="black").place(x=canvas_width/2+5, y=canvas_height/2+5)
+            tk.Label(root, text="D", font=big_font, fg="white", bg="black").place(x=5, y=canvas_height/2+5)
+            tk.Label(root, text="A", font=big_font, fg="white", bg="black").place(x=canvas_width/2+5, y=5)
 
-            tk.Label(root, text="S1", font=big_font, fg="white", bg="black").place(x=canvas_width*3/2+20, y=0)
-            tk.Label(root, text="S0", font=big_font, fg="white", bg="black").place(x=canvas_width+20, y=0)
-            tk.Label(root, text="S2", font=big_font, fg="white", bg="black").place(x=canvas_width*3/2+20, y=canvas_height/2)
-            tk.Label(root, text="DoP", font=big_font, fg="white", bg="black").place(x=canvas_width+20, y=canvas_height/2)
+            tk.Label(root, text="S1", font=big_font, fg="white", bg="black").place(x=canvas_width*3/2+20, y=5)
+            tk.Label(root, text="S0", font=big_font, fg="white", bg="black").place(x=canvas_width+20, y=5)
+            tk.Label(root, text="S2", font=big_font, fg="white", bg="black").place(x=canvas_width*3/2+20, y=canvas_height/2+5)
+            tk.Label(root, text="DoP", font=big_font, fg="white", bg="black").place(x=canvas_width+20, y=canvas_height/2+5)
             
             
             

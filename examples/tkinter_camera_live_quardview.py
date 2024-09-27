@@ -18,7 +18,7 @@ try:
     configure_path()
 except ImportError:
     configure_path = None
-
+from tkinter import font
 from thorlabs_tsi_sdk.tl_camera import TLCameraSDK, TLCamera, Frame
 from thorlabs_tsi_sdk.tl_camera_enums import SENSOR_TYPE
 from thorlabs_tsi_sdk.tl_mono_to_color_processor import MonoToColorProcessorSDK
@@ -48,29 +48,42 @@ objects that will be displayed to the canvas. It automatically adjusts its size 
 
 
 class LiveViewCanvas(tk.Canvas):
-
-    def __init__(self, parent, image_queue):
-        # type: (typing.Any, queue.Queue) -> LiveViewCanvas
+    def __init__(self, parent, image_queue, canvas_width, canvas_height):
         self.image_queue = image_queue
+        self._canvas_width = canvas_width
+        self._canvas_height = canvas_height
         self._image_width = 0
         self._image_height = 0
-        tk.Canvas.__init__(self, parent)
+        
+        # Store the image reference
+        self._image = None
+        
+        tk.Canvas.__init__(self, parent, width=self._canvas_width, height=self._canvas_height)
         self.pack(side="top", fill="both", expand=True)
         
         self._get_image()
 
     def _get_image(self):
         try:
+            # Get the next image from the queue
             image = self.image_queue.get_nowait()
-            self._image = ImageTk.PhotoImage(master=self, image=image)
+            
+            # Resize the image to fit the canvas with LANCZOS resampling
+            resized_image = image.resize((self._canvas_width, self._canvas_height), Image.Resampling.LANCZOS)
+            
+            # Convert the resized image to be displayed
+            self._image = ImageTk.PhotoImage(master=self, image=resized_image)
+            
             if (self._image.width() != self._image_width) or (self._image.height() != self._image_height):
-                # resize the canvas to match the new image size
                 self._image_width = self._image.width()
                 self._image_height = self._image.height()
                 self.config(width=self._image_width, height=self._image_height)
+                
+            # Display the resized image on the canvas
             self.create_image(0, 0, image=self._image, anchor='nw')
         except queue.Empty:
             pass
+        
         self.after(10, self._get_image)
 
 
@@ -148,19 +161,18 @@ class ImageAcquisitionThread(threading.Thread):
                 unprocessed_image = frame.image_buffer.reshape(int(height), int(width))
                 unprocessed_image = frame.image_buffer >> (self._bit_depth - 8)  # this is the raw image data
                 
-                output_quadview = np.zeros(shape=(int(height/2), int(width/2)))  # initialize array for QuadView data
-                # Top Left Quadrant =
-                output_quadview[0:int(height / 4), 0:int(width / 4)] = \
-                    unprocessed_image[0::4, 0::4]  # (0,0): top left rotation == camera_polar_phase
-                # Top Right Quadrant =
-                output_quadview[0:int(height / 4), int(width / 4):int(width / 2)] = \
-                    unprocessed_image[0::4, 1::4]  # (0,1): top right rotation
-                # Bottom Left Quadrant =
-                output_quadview[int(height / 4):int(height / 2), 0:int(width / 4)] = \
-                    unprocessed_image[1::4, 0::4]  # (1,0): bottom left rotation
-                # Bottom Right Quadrant =
-                output_quadview[int(height / 4):int(height / 2), int(width / 4):int(width / 2)] = \
-                    unprocessed_image[1::4, 1::4]  # (1,1): bottom right rotation
+                output_quadview = np.zeros((int(height), int(width)))
+                output_quadview[0:int(height / 2), 0:int(width / 2)] = \
+                    unprocessed_image[0::2, 0::2]  # (0,0): top left rotation == camera_polar_phase
+                # Top Right Quadrant =A
+                output_quadview[0:int(height / 2), int(width / 2):int(width )] = \
+                    unprocessed_image[0::2, 1::2]  # (0,1): top right rotation
+                # Bottom Left Quadrant =D
+                output_quadview[int(height / 2):int(height), 0:int(width / 2)] = \
+                    unprocessed_image[1::2, 0::2]  # (1,0): bottom left rotation
+                # Bottom Right Quadrant =H
+                output_quadview[int(height / 2):int(height ), int(width / 2):int(width )] = \
+                        unprocessed_image[1::2, 1::2]  # (1,1): bottom right rotation
                 # Display QuadView
                 quadview_image = Image.fromarray(output_quadview) 
                   
@@ -211,8 +223,14 @@ if __name__ == "__main__":
             root = tk.Tk()
             root.title(camera.name)
             image_acquisition_thread = ImageAcquisitionThread(camera)
-            camera_widget = LiveViewCanvas(parent=root, image_queue=image_acquisition_thread.get_output_queue())
+            canvas_width, canvas_height=800,800
+            camera_widget = LiveViewCanvas(parent=root, image_queue=image_acquisition_thread.get_output_queue(), canvas_width=canvas_width, canvas_height=canvas_height)
 # call widget one more time
+            big_font = font.Font(size=16)
+            tk.Label(root, text="V", font=big_font, fg="white", bg="black").place(x=5, y=5)
+            tk.Label(root, text="H", font=big_font, fg="white", bg="black").place(x=canvas_width/2+5, y=canvas_height/2+5)
+            tk.Label(root, text="D", font=big_font, fg="white", bg="black").place(x=5, y=canvas_height/2+5)
+            tk.Label(root, text="A", font=big_font, fg="white", bg="black").place(x=canvas_width/2+5, y=5)
             print("Setting camera parameters...")
             camera.frames_per_trigger_zero_for_unlimited = 0
             camera.arm(2)
