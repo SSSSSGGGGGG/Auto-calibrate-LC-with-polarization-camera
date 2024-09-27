@@ -209,6 +209,7 @@ class ImageAcquisitionThread(threading.Thread):
                 color_bar = np.zeros((color_bar_height, color_bar_width, 3), dtype=np.uint8)
                 
                 border = np.ones((color_bar_height, 15, 3), dtype=np.uint8)*255
+                hot_scale = np.ones((color_bar_height, 120, 3), dtype=np.uint8)*255
                 # Create the seismic colormap using Matplotlib
                 colormap = plt.get_cmap("seismic")
                 colormap_h = plt.get_cmap("hot")
@@ -227,7 +228,7 @@ class ImageAcquisitionThread(threading.Thread):
                 S0_Dop=np.vstack((output_quadview[0:int(height / 2), 0:int(width / 2)],output_quadview[int(height / 2):int(height), 0:int(width / 2)]))
                 S1_S2=np.vstack((output_quadview[0:int(height / 2), int(width / 2):int(width )] ,output_quadview[int(height / 2):int(height ), int(width / 2):int(width )]))
                 # Combine the quadview image and the color bar
-                output_quadview_with_colorbar = np.hstack((S0_Dop,border,color_bar_3d_h,border,S1_S2, border,color_bar_3d))
+                output_quadview_with_colorbar = np.hstack((S0_Dop,hot_scale,color_bar_3d_h,border,S1_S2, hot_scale,color_bar_3d))
             
         return Image.fromarray(output_quadview_with_colorbar)
 
@@ -296,10 +297,10 @@ if __name__ == "__main__":
 
             image_acquisition_thread = ImageAcquisitionThread(camera)
             
-            canvas_width, canvas_height=600,600
+            canvas_width, canvas_height=800,800
             # Create two canvas widgets with fixed sizes
-            canvas1 = LiveViewCanvas(parent=root, image_queue=image_acquisition_thread.get_output_queue1(), canvas_width=600, canvas_height=600)
-            canvas2 = LiveViewCanvas(parent=root, image_queue=image_acquisition_thread.get_output_queue2(), canvas_width=600, canvas_height=600)
+            canvas1 = LiveViewCanvas(parent=root, image_queue=image_acquisition_thread.get_output_queue1(), canvas_width=canvas_width, canvas_height=canvas_height)
+            canvas2 = LiveViewCanvas(parent=root, image_queue=image_acquisition_thread.get_output_queue2(), canvas_width=canvas_width+200, canvas_height=canvas_height)
             
             # Create the color bar canvas
             # colorbar = ColorBarCanvas(parent=root)
@@ -311,17 +312,22 @@ if __name__ == "__main__":
             
 
             big_font = font.Font(size=16)
-            tk.Label(root, text="V", font=big_font, fg="white", bg="black").place(x=0, y=0)
-            tk.Label(root, text="H", font=big_font, fg="white", bg="black").place(x=canvas_width/2, y=canvas_height/2)
-            tk.Label(root, text="D", font=big_font, fg="white", bg="black").place(x=0, y=canvas_height/2)
-            tk.Label(root, text="A", font=big_font, fg="white", bg="black").place(x=canvas_width/2, y=0)
+            tk.Label(root, text="V", font=big_font, fg="white", bg="black").place(x=10, y=10)
+            tk.Label(root, text="H", font=big_font, fg="white", bg="black").place(x=canvas_width/2+10, y=canvas_height/2+10)
+            tk.Label(root, text="D", font=big_font, fg="white", bg="black").place(x=10, y=canvas_height/2+10)
+            tk.Label(root, text="A", font=big_font, fg="white", bg="black").place(x=canvas_width/2+10, y=10)
 
-            tk.Label(root, text="S1", font=big_font, fg="white", bg="black").place(x=canvas_width*3/2, y=0)
-            tk.Label(root, text="S0", font=big_font, fg="white", bg="black").place(x=canvas_width, y=0)
-            tk.Label(root, text="S2", font=big_font, fg="white", bg="black").place(x=canvas_width*3/2, y=canvas_height/2)
-            tk.Label(root, text="DoP", font=big_font, fg="white", bg="black").place(x=canvas_width, y=canvas_height/2)
+            tk.Label(root, text="S1", font=big_font, fg="white", bg="black").place(x=canvas_width*3/2+120, y=10)
+            tk.Label(root, text="S0", font=big_font, fg="white", bg="black").place(x=canvas_width+20, y=10)
+            tk.Label(root, text="S2", font=big_font, fg="white", bg="black").place(x=canvas_width*3/2+120, y=canvas_height/2+10)
+            tk.Label(root, text="DoP", font=big_font, fg="white", bg="black").place(x=canvas_width+20, y=canvas_height/2+10)
             
+            parent_bg = root.cget("bg")
+            tk.Label(root, text="+1", font=font.Font(size=15), fg="black",bg=parent_bg ).place(x=canvas_width*3/2+60, y=0)
+            tk.Label(root, text="+0", font=font.Font(size=15), fg="black",bg=parent_bg).place(x=canvas_width*3/2+60, y=canvas_height-30)
             
+            tk.Label(root, text="+1", font=font.Font(size=15), fg="black",bg=parent_bg).place(x=2*canvas_width+160, y=0)
+            tk.Label(root, text="-1", font=font.Font(size=15), fg="black",bg=parent_bg).place(x=2*canvas_width+160, y=canvas_height-30)
             
             print("Setting camera parameters...")
             camera.frames_per_trigger_zero_for_unlimited = 0
