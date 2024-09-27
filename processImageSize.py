@@ -9,7 +9,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import os
 
-os.chdir("C:/Users/Laboratorio/AutoMeasureLCwithPolorizationCamera/monitor/monitor_mor")
+os.chdir("C:/Users/Laboratorio/AutoMeasureLCwithPolorizationCamera")
 im=plt.imread("0.tif")
 im1=im[:,:,1] # green channel
 # plt.imshow(im1)

@@ -184,9 +184,11 @@ class ImageAcquisitionThread(threading.Thread):
                 
                 total = V_norm + A_norm + D_norm + H_norm
                 S0 = total / 2  # S0 normalization
-                S1 = (V_norm - H_norm)# / (0.5 * total)  # S1 normalization
-                S2 = (A_norm - D_norm)# / (0.5 * total)  # S2 normalization
+                S1 = (V_norm - H_norm) / (0.5 * total)  # S1 normalization
+                S2 = (A_norm - D_norm)/ (0.5 * total)  # S2 normalization
                 Dop=np.sqrt(S1**2+S2**2)/S0
+                # w,h=len(S1)
+                
                 # Apply the colormap
                 S0_colored = self.apply_colormap_hot(S0)
                 S1_colored = self.apply_colormap(S1)
@@ -204,55 +206,61 @@ class ImageAcquisitionThread(threading.Thread):
                 # Bottom Right Quadrant = S3
                 output_quadview[int(height / 4):int(height / 2), int(width / 4):int(width / 2)] = S2_colored  # Ensure grayscale
                 
+                
+                
                 # Create and add the seismic color bar
                 color_bar_height = int(height / 2)  # Height of the color bar
                 color_bar_width = 40   # Width of the color bar
                 color_bar = np.zeros((color_bar_height, color_bar_width, 3), dtype=np.uint8)
-            
-                # Create the seismic colormap using Matplotlib
-                colormap = plt.get_cmap("seismic")
-            
+                color_bar_hot = np.zeros((color_bar_height, color_bar_width, 3), dtype=np.uint8)
+                new_matrix=np.ones((color_bar_height, 15,3),dtype=np.uint8)*255
+                
+                S0_Dop=np.vstack((output_quadview[0:int(height / 4), 0:int(width / 4)], output_quadview[int(height / 4):int(height / 2), 0:int(width / 4)]))
+                S1_S2=np.vstack((output_quadview[0:int(height / 4), int(width / 4):int(width / 2)], output_quadview[int(height / 4):int(height / 2), int(width / 4):int(width / 2)]))
+                
                 # Create a vertical gradient based on the colormap
-                gradient = np.linspace(1,0, color_bar_height)  # Create an array from 0 to 1
-
+                gradient = np.linspace(1,0, color_bar_height)  # Create an array from 1 to 0
                 # Apply the colormap to the gradient
                 color_image = plt.get_cmap('seismic')(gradient)  # This gives an array of shape (height, 4)
+                color_image_hot = plt.get_cmap('hot')(gradient)
                 # Convert to RGB (discarding the alpha channel) and scale to 0-255
-                color_bar = (color_image[:, :3] * 255).astype(np.uint8)  # Shape will be (height, 3)
-                
+                color_bar = (color_image[:, :3] * 255).astype(np.uint8)  # Shape will be (height, 3) 
+                color_bar_hot = (color_image_hot[:, :3] * 255).astype(np.uint8)  # Shape will be (height, 3)
                 # Reshape to (color_bar_height, color_bar_width, 3)
-                color_bar_3d = np.tile(color_bar[:, np.newaxis, :], (1, color_bar_width, 1))
+                color_bar_3d = np.tile(color_bar[:, np.newaxis, :], (1, color_bar_width, 1)) 
+                color_bar_3d_hot = np.tile(color_bar_hot[:, np.newaxis, :], (1, color_bar_width, 1))
                 
+                
+                S0_Dop_c=np.hstack((S0_Dop, new_matrix,color_bar_3d_hot))
+                S1_S2_c=np.hstack((S1_S2, new_matrix,color_bar_3d))
                 # Combine the quadview image and the color bar
-                output_quadview_with_colorbar = np.hstack((output_quadview, color_bar_3d))
+                output_quadview_with_colorbar = np.hstack((S0_Dop_c,new_matrix, S1_S2_c))
             
         return Image.fromarray(output_quadview_with_colorbar)
 
    
 
     def apply_colormap(self, data):
-            # Normalize the data to the range [0, 1]
+        
+        matrix = np.clip(data, -1, 1)
             # Use the 'seismic' colormap
         cmap = plt.get_cmap('seismic')
-        
+        normalized_data = (matrix + 1) / 2
         # Apply the colormap without normalizing the data again
-        colored_image = cmap(data)  # This gives a float array in the range [0, 1]
-    
+        colored_image = cmap(normalized_data)  # This gives a float array in the range [0, 1]
         # Convert to uint8 for image display
         colored_image_uint8 = (colored_image[:, :, :3] * 255).astype(np.uint8)
-        return Image.fromarray(colored_image_uint8)
+        return colored_image_uint8
     
     def apply_colormap_hot(self, data):
-            # Normalize the data to the range [0, 1]
-            # Use the 'seismic' colormap
-        cmap = plt.get_cmap('hot')
         
+        matrix = np.clip(data, 0, 1)    
+        cmap = plt.get_cmap('hot')
         # Apply the colormap without normalizing the data again
-        colored_image = cmap(data)  # This gives a float array in the range [0, 1]
-    
+        colored_image = cmap(matrix)  # This gives a float array in the range [0, 1]   
         # Convert to uint8 for image display
         colored_image_uint8 = (colored_image[:, :, :3] * 255).astype(np.uint8)
-        return Image.fromarray(colored_image_uint8)
+        return colored_image_uint8
 
 
     def run(self):
@@ -294,10 +302,10 @@ if __name__ == "__main__":
 
             image_acquisition_thread = ImageAcquisitionThread(camera)
             
-            canvas_width, canvas_height=600,600
+            canvas_width, canvas_height=800,800
             # Create two canvas widgets with fixed sizes
-            canvas1 = LiveViewCanvas(parent=root, image_queue=image_acquisition_thread.get_output_queue1(), canvas_width=600, canvas_height=600)
-            canvas2 = LiveViewCanvas(parent=root, image_queue=image_acquisition_thread.get_output_queue2(), canvas_width=600, canvas_height=600)
+            canvas1 = LiveViewCanvas(parent=root, image_queue=image_acquisition_thread.get_output_queue1(), canvas_width=canvas_width, canvas_height=canvas_height)
+            canvas2 = LiveViewCanvas(parent=root, image_queue=image_acquisition_thread.get_output_queue2(), canvas_width=canvas_width, canvas_height=canvas_height)
             
             # Create the color bar canvas
             # colorbar = ColorBarCanvas(parent=root)
@@ -314,10 +322,10 @@ if __name__ == "__main__":
             tk.Label(root, text="D", font=big_font, fg="white", bg="black").place(x=0, y=canvas_height/2)
             tk.Label(root, text="A", font=big_font, fg="white", bg="black").place(x=canvas_width/2, y=0)
 
-            tk.Label(root, text="S1", font=big_font, fg="white", bg="black").place(x=canvas_width*3/2, y=0)
-            tk.Label(root, text="S0", font=big_font, fg="white", bg="black").place(x=canvas_width, y=0)
-            tk.Label(root, text="S2", font=big_font, fg="white", bg="black").place(x=canvas_width*3/2, y=canvas_height/2)
-            tk.Label(root, text="DoP", font=big_font, fg="white", bg="black").place(x=canvas_width, y=canvas_height/2)
+            tk.Label(root, text="S1", font=big_font, fg="white", bg="black").place(x=canvas_width*3/2+20, y=0)
+            tk.Label(root, text="S0", font=big_font, fg="white", bg="black").place(x=canvas_width+20, y=0)
+            tk.Label(root, text="S2", font=big_font, fg="white", bg="black").place(x=canvas_width*3/2+20, y=canvas_height/2)
+            tk.Label(root, text="DoP", font=big_font, fg="white", bg="black").place(x=canvas_width+20, y=canvas_height/2)
             
             
             
