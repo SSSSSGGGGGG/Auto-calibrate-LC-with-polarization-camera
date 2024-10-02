@@ -191,9 +191,15 @@ class ImageAcquisitionThread(threading.Thread):
                 H_norm = unprocessed_image[1::r, 1::r] / 255
                 
                 total = V_norm + A_norm + D_norm + H_norm
+                lenx,leny=total.shape                    
+                epsilon = 1e-7
+                for i1 in range(lenx):  
+                    for j1 in range(leny):
+                        if np.abs(total[i1][j1]) < epsilon:  # Check if the value is close to zero
+                            total[i1][j1] = epsilon
                 S0 = total / 2  # S0 normalization
                 S1 = (V_norm - H_norm) / (0.5 * total)  # S1 normalization
-                S2 = (A_norm - D_norm) / (0.5 * total)  # S2 normalization
+                S2 = (D_norm - A_norm) / (0.5 * total)  # S2 normalization
                 Dop=np.sqrt(S1**2+S2**2)/S0
                 # Apply the colormap
                 S0_colored = self.apply_colormap_hot(S0)

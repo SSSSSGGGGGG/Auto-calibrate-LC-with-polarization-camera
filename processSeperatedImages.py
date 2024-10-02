@@ -16,7 +16,7 @@ os.chdir("C:/Users/Laboratorio/AutoMeasureLCwithPolorizationCamera")
 imName=[0] #,[0,16,32,48,64,80,96,112,128,144,160,176,192,208,224,240,255]
 
     
-openName=str(0) #"green"+
+openName=str(imName[0])+"V" #"green"+
 saveName="new_"
 im=plt.imread(openName+".tif")
 print(openName+".tif")
@@ -27,11 +27,11 @@ mpl.rcParams['font.size'] = 15
 leftP=im1[0:2048,0:1223]
 rightP=im1[0:2048,1224:2448]
 
-im_0=leftP[0:1024,0:1223] #(611-100/612+100) (654-200/655+200)
+im_90=leftP[0:1024,0:1223] #(611-100/612+100) (654-200/655+200)
 im_45=leftP[1024:2048,0:1223] #(1636-100/1637+100) (654-200/655+200)
 
 im_n45 = rightP[0:1024, 0:1223]
-im_90 = rightP[1024:2048, 0:1223]
+im_0 = rightP[1024:2048, 0:1223]
 
 norm_0=im_0/255.0
 norm_90=im_90/255.0
@@ -39,10 +39,10 @@ norm_45=im_45/255.0
 norm_n45=im_n45/255.0
 
 vector_L=np.array([[0], [0] ], dtype=complex)
-matrix_QWP=np.array([[1, 0], [0, 1j] ])
+matrix_QWP=np.array([[1, -1j], [-1j, 1] ])
 # print(norm_45.shape)  # Check the shape of norm_45
 # print(norm_n45.shape)
-s3_L=np.zeros_like(norm_45)
+s3_L=np.zeros_like(norm_0)
 for i in range (1024):
     for j in range (1223): 
         vector_L[0][0]=np.sqrt(norm_90[i][j])
@@ -53,14 +53,14 @@ for i in range (1024):
 
 vector_R=np.array([[0], [0] ], dtype=complex)
 # matrix_QWP_i=np.array([[1, 0], [0, 1j], ])       
-s3_R=np.zeros_like(norm_45)
+s3_R=np.zeros_like(norm_0)
 for i in range (1024):
     for j in range (1223): 
         vector_R[0][0]=0
         vector_R[1][0]=np.sqrt(norm_0[i][j])
         s3_11=np.dot(matrix_QWP, vector_R)
         s3_22=np.vdot(s3_11, s3_11)
-        s3_R[i][j]=np.sqrt(s3_22)
+        s3_R[i][j]=s3_22
 
 # vector[0][0] = np.sqrt(norm_90[1023][1222])
 # vector[1][0] = 0 # Ensure the zero is treated as a complex number
@@ -74,12 +74,13 @@ for i in range (1024):
 s0_H_V=norm_0+norm_90
 s0_D_A=norm_45+norm_n45
 S0_avg=(norm_0+norm_90+norm_45+norm_n45)/2
+S3=s3_L/2-s3_R/2
 
-s0=S0_avg
-s1=(norm_0-norm_90)/S0_avg
+s0=S0_avg/2
+s1=(norm_90-norm_0)/S0_avg
 s2=(norm_45-norm_n45)/S0_avg
-s3=(s3_R-s3_L)/S0_avg
-s3_deduced=np.sqrt(s0**2-s1**2-s2**2)
+s3=(S3)/S0_avg
+# s3_deduced=np.sqrt(s0**2-s1**2-s2**2)
 
 
 h, w, channels = im.shape
@@ -111,13 +112,13 @@ plt.title("s3")
 plt.minorticks_on()
 plt.grid(which='minor',linestyle=':', linewidth='0.1', color='gray')
 
-plt.figure(12)
-# plt.imshow(rgb_image_3,cmap='seismic')
-plt.imshow(s3_deduced,vmin=-1,vmax=1,cmap='seismic')
-plt.colorbar() 
-plt.title("S3 from deduction")
-plt.minorticks_on()
-plt.grid(which='minor',linestyle=':', linewidth='0.1', color='gray')
+# plt.figure(12)
+# # plt.imshow(rgb_image_3,cmap='seismic')
+# plt.imshow(s3_deduced/2,vmin=-1,vmax=1,cmap='seismic')
+# plt.colorbar() 
+# plt.title("S3 from deduction")
+# plt.minorticks_on()
+# plt.grid(which='minor',linestyle=':', linewidth='0.1', color='gray')
 
 # plt.figure(9)
 # plt.imshow(s0,vmin=0,vmax=1,cmap='hot')

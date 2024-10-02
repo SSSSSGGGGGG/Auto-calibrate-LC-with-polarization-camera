@@ -105,7 +105,7 @@ with TLCameraSDK() as camera_sdk, PolarizationProcessorSDK() as polarization_sdk
             draw.text((1224,1024), text1, (255,255,255),font=font)
             draw.text((0,1024), text3, (255,255,255),font=font)
             draw.text((1224,0), text4, (255,255,255),font=font)
-            img.save("0.tif")
+            img.save("0V.tif")
 #  Because we are using the 'with' statement context-manager, disposal has been taken care of.
 
 print("program completed")
