@@ -41,6 +41,7 @@ except ImportError:
     import queue
 import time
 from queue import Full
+import sys 
 """ LiveViewCanvas
 
 This is a Tkinter Canvas object that can be reused in custom programs. The Canvas expects a parent Tkinter object and 
@@ -87,7 +88,7 @@ class LiveViewCanvas(tk.Canvas):
         except queue.Empty:
             pass
         
-        self.after(10, self._get_image)
+        self.after(18, self._get_image)
 
 """LC KLC controller Thread
 This class is to control LC, by sending voltage to it.
@@ -95,26 +96,26 @@ Synchronize KLC and polarization camera, which is an live display.
 
 """
 class KLCThread(threading.Thread):
-    def __init__(self, KLC,vols,event):
+    def __init__(self,vols,event):
         super(KLCThread,self).__init__()
-        self.KLC=KLC
+        self.KLC=klcListDevices()
         self.length=len(vols)
         self.volarr =  (c_float * self.length)(*vols)
         if(len(self.KLC)<=0):
            print('There is no devices connected')
-           exit()
+           sys.exit()
         self.sn1 = self.KLC[0][0]
         print("connect ",self.sn1)
         self.hdl1 = klcOpen(self.sn1, 115200, 3)
         if self.hdl1 < 0:
-            print("Failed to open connection to device", self.sn1)
-            exit()
+            print("Failed to open connection to device", self.sn1,self.hdl1)
+            sys.exit()
         self.event = event
         self._stop_event = threading.Event()
     
     def sendVoltages(self):
-        f_set=1000  # !!!!! set the frequency to the enabled channel
-        mode=2 # 1 continuous; 2 cycle.
+        f_set=2000  # !!!!! set the frequency to the enabled channel
+        mode=1 # 1 continuous; 2 cycle.
         cyclenumber=1 #number of cycles 1~ 2147483648.s
         delay=1000  # !!! the sample intervals[ms] 1~ 2147483648
         precycle_rest=0  
@@ -127,7 +128,7 @@ class KLCThread(threading.Thread):
         
         if(klcStartLUTOutput(self.hdl1)<0):
             print("klcStartLUTOutput failed")
-        time.sleep(1)
+        # time.sleep(1)
         
     def turnOffKLC(self):
         try:
@@ -158,7 +159,7 @@ class KLCThread(threading.Thread):
             self.event.wait()  # Wait until the event is set
             self.sendVoltages()  # Send voltages
              
-            time.sleep(1)
+            time.sleep(0.1)
 
 """ ImageAcquisitionThread
 
@@ -173,12 +174,13 @@ time for the thread to stop.
 
 class ImageAcquisitionThread(threading.Thread):
 
-    def __init__(self, camera,r,event):
+    def __init__(self, camera,r,event,vol):
         super(ImageAcquisitionThread, self).__init__()
         self._camera = camera
         self._previous_timestamp = 0
         self._r=r
-
+        self.vol=vol
+        
         if self._camera.camera_sensor_type != SENSOR_TYPE.BAYER:
             self._is_color = False
         else:
@@ -198,8 +200,8 @@ class ImageAcquisitionThread(threading.Thread):
         self._camera.image_poll_timeout_ms = 0
 
         # Create two separate queues for each canvas
-        self._image_queue1 = queue.Queue(maxsize=2)
-        self._image_queue2 = queue.Queue(maxsize=2)
+        self._image_queue1 = queue.Queue(maxsize=5)
+        self._image_queue2 = queue.Queue(maxsize=5)
         
         self.event = event
         self._stop_event = threading.Event()
@@ -247,11 +249,13 @@ class ImageAcquisitionThread(threading.Thread):
                   
         return Image.fromarray(output_quadview)
 
-    def _get_image_for_canvas2(self, frame,r):
+    def _get_image_for_canvas2(self, frame,r,vol):
     # Generate a different image for canvas 2 (e.g., another part of the image)
         width = frame.image_buffer.shape[1]
         height = frame.image_buffer.shape[0]
-    
+        print(list(vol),flush=True)
+        
+        
         with PolarizationProcessorSDK() as polarization_sdk:
             with polarization_sdk.create_polarization_processor() as polarization_processor:
                 unprocessed_image = frame.image_buffer.reshape(int(height), int(width))
@@ -283,12 +287,17 @@ class ImageAcquisitionThread(threading.Thread):
                 width_q=int(width/0.5/r)
                 # Create an output quadview image
                 output_quadview = np.zeros((height_q,width_q,3), dtype=np.uint8)
+                
                 # Top Left Quadrant = S0
                 output_quadview[0:int(height_q / 2), 0:int(width_q / 2)] = S0_colored
-                # Top Right Quadrant = S1
-                output_quadview[0:int(height_q / 2), int(width_q / 2):int(width_q )] = S1_colored
-                # Bottom Left Quadrant = dop
-                output_quadview[int(height_q / 2):int(height_q), 0:int(width_q / 2)] = Dop_colored  # Ensure grayscale
+                tolerance = 1e-3
+                if abs(vol[0] - 1.3999) <= tolerance:
+                    # Top Right Quadrant = S1
+                    output_quadview[0:int(height_q / 2), int(width_q / 2):int(width_q )] = S1_colored
+                # elif abs(vol[1] - 1.1499) <= tolerance:
+                else:
+                    # Bottom Left Quadrant = s3
+                    output_quadview[int(height_q / 2):int(height_q), 0:int(width_q / 2)] = S1_colored  # Ensure grayscale
                 # Bottom Right Quadrant = s2
                 output_quadview[int(height_q / 2):int(height_q ), int(width_q / 2):int(width_q )] = S2_colored  # Ensure grayscale
                 
@@ -357,7 +366,7 @@ class ImageAcquisitionThread(threading.Thread):
                 if frame is not None:
                     # Generate different images for each queue
                     pil_image1 = self._get_image_for_canvas1(frame,r)
-                    pil_image2 = self._get_image_for_canvas2(frame,r)
+                    pil_image2 = self._get_image_for_canvas2(frame,r,self.vol)
                     
                     try:
                         self._image_queue1.put_nowait(pil_image1)
@@ -379,7 +388,7 @@ class ImageAcquisitionThread(threading.Thread):
             except Exception as error:
                 print(f"Encountered error: {error}, image acquisition will stop.")
                 break
-            time.sleep(0.5)
+            time.sleep(0.1)
         print("Image acquisition has stopped")
         if self._is_color:
             self._mono_to_color_processor.dispose()
@@ -420,8 +429,11 @@ if __name__ == "__main__":
             root = tk.Tk()
             root.title(camera.name)
             event = threading.Event()
-            image_acquisition_thread = ImageAcquisitionThread(camera,r,event)
-            klc_thread = KLCThread(klcListDevices(), vols,event)
+            
+            klc_thread = KLCThread( vols, event)
+            
+            image_acquisition_thread = ImageAcquisitionThread(camera,r,event,klc_thread.volarr)
+            
             canvas_width, canvas_height=800,800
             
             # Create two canvas widgets with fixed sizes
@@ -451,7 +463,7 @@ if __name__ == "__main__":
             tk.Label(root, text="S1", font=big_font, fg="white", bg="black").place(x=canvas_width*3/2+120, y=10)
             tk.Label(root, text="S0", font=big_font, fg="white", bg="black").place(x=canvas_width+20, y=10)
             tk.Label(root, text="S2", font=big_font, fg="white", bg="black").place(x=canvas_width*3/2+120, y=canvas_height/2+10)
-            tk.Label(root, text="DoP", font=big_font, fg="white", bg="black").place(x=canvas_width+20, y=canvas_height/2+10)
+            tk.Label(root, text="S3", font=big_font, fg="white", bg="black").place(x=canvas_width+20, y=canvas_height/2+10)
             
             
             if r==2:

@@ -33,12 +33,15 @@ import matplotlib.pyplot as plt
 import typing
 import threading
 from tkinter import font,simpledialog
+from KLCCommandLib import *
 try:
     #  For Python 2.7 queue is named Queue
     import Queue as queue
 except ImportError:
     import queue
-
+import time
+from queue import Full
+import sys 
 """ LiveViewCanvas
 
 This is a Tkinter Canvas object that can be reused in custom programs. The Canvas expects a parent Tkinter object and 
@@ -47,7 +50,7 @@ objects that will be displayed to the canvas. It automatically adjusts its size 
 
 """
 
-
+hdl1 = None
 class LiveViewCanvas(tk.Canvas):
     def __init__(self, parent, image_queue, canvas_width, canvas_height):
         self.image_queue = image_queue
@@ -85,9 +88,100 @@ class LiveViewCanvas(tk.Canvas):
         except queue.Empty:
             pass
         
-        self.after(10, self._get_image)
+        self.after(18, self._get_image)
 
+"""LC KLC controller Thread
+This class is to control LC, by sending voltage to it.
+Synchronize KLC and polarization camera, which is an live display.
 
+"""
+vols_updated = threading.Event()
+shared_vols = [0.0]
+class KLCThread(threading.Thread):
+    def __init__(self,vols,event):
+        super(KLCThread,self).__init__()
+        global hdl1
+        self.KLC=klcListDevices()
+        self.length=len(vols)
+        
+        
+        if(len(self.KLC)<=0):
+           print('There is no devices connected')
+           sys.exit()
+        self.sn1 = self.KLC[0][0]
+        print("connect ",self.sn1)
+        hdl1 = klcOpen(self.sn1, 115200, 3)
+        if hdl1 < 0:
+            print("Failed to open connection to device", self.sn1,hdl1)
+            sys.exit()
+            
+        
+        self.event = event
+        self._stop_event = threading.Event()
+    
+    def sendVoltages(self):
+        global hdl1
+        f_set=1000  # !!!!! set the frequency to the enabled channel
+        mode=1 # 1 continuous; 2 cycle.
+        cyclenumber=1 #number of cycles 1~ 2147483648.s
+        delay=1000  # !!! the sample intervals[ms] 1~ 2147483648
+        precycle_rest=0 
+        count=0
+        while(count<self.length):  
+            vols1=[vols[count]] 
+            shared_vols[0] = vols1[0]
+            vols_updated.set()
+            print("KLC",vols1,flush=True)
+            self.volarr =  (c_float * len(vols1))(*vols1)
+            
+            print("KLC shared",shared_vols,flush=True)
+            if(klcSetOutputLUT(hdl1, self.volarr, len(vols1))<0):
+                print("klcSetOutputLUT failed")
+                
+            print("set LUT parameters")
+            klcSetFrequency1(hdl1, f_set)
+            if(klcSetOutputLUTParams(hdl1, mode, cyclenumber, delay, precycle_rest)<0):
+                print("klcSetOutputLUTParams failed")
+            
+            if(klcStartLUTOutput(hdl1)<0):
+                print("klcStartLUTOutput failed")
+            # time.sleep(1)
+            count+=1
+        
+        
+        
+    def turnOffKLC(self):
+        global hdl1
+        try:
+            klcStopLUTOutput(hdl1)
+            
+            klcClose(hdl1)
+                     
+        except Exception as ex:
+            print("Warning:", ex)
+        print("*** End ***")
+    def stop(self):
+        self._stop_event.set() 
+        self.turnOffKLC()
+    def run(self):
+        global hdl1
+        while not self._stop_event.is_set():          
+            try:
+                if hdl1 < 0:
+                    print("open ", self.sn1, " failed")
+                    self.stop()  # Stop the thread if connection fails
+                    return
+                if klcIsOpen(self.sn1) == 0:
+                    print("klcIsOpen failed, closing connection")
+                    klcClose(hdl1)
+                    self.stop()  # Stop the thread if the device is not open
+                    return
+            except Exception as ex:
+                print("Warning:", ex)
+            self.event.wait()  # Wait until the event is set
+            self.sendVoltages()  # Send voltages
+             
+            time.sleep(0.1)
 
 """ ImageAcquisitionThread
 
@@ -102,11 +196,13 @@ time for the thread to stop.
 
 class ImageAcquisitionThread(threading.Thread):
 
-    def __init__(self, camera):
+    def __init__(self, camera,r,event):
         super(ImageAcquisitionThread, self).__init__()
         self._camera = camera
         self._previous_timestamp = 0
-
+        self._r=r
+        
+        
         if self._camera.camera_sensor_type != SENSOR_TYPE.BAYER:
             self._is_color = False
         else:
@@ -126,9 +222,10 @@ class ImageAcquisitionThread(threading.Thread):
         self._camera.image_poll_timeout_ms = 0
 
         # Create two separate queues for each canvas
-        self._image_queue1 = queue.Queue(maxsize=2)
-        self._image_queue2 = queue.Queue(maxsize=2)
+        self._image_queue1 = queue.Queue(maxsize=5)
+        self._image_queue2 = queue.Queue(maxsize=5)
         
+        self.event = event
         self._stop_event = threading.Event()
         self._pause_event = threading.Event()  # For pause functionality
         self._pause_event.set()
@@ -147,7 +244,7 @@ class ImageAcquisitionThread(threading.Thread):
     def resume(self):
         self._pause_event.set()
 
-    def _get_image_for_canvas1(self, frame):
+    def _get_image_for_canvas1(self, frame,r):
         # Generate a specific image for canvas 1 (e.g., Quadview data)
         width = frame.image_buffer.shape[1]
         height = frame.image_buffer.shape[0]
@@ -155,43 +252,54 @@ class ImageAcquisitionThread(threading.Thread):
             with polarization_sdk.create_polarization_processor() as polarization_processor:
                 unprocessed_image = frame.image_buffer.reshape(int(height), int(width))
                 unprocessed_image = frame.image_buffer >> (self._bit_depth - 8)  # this is the raw image data
-                
-                output_quadview = np.zeros((int(height), int(width)))
-                output_quadview[0:int(height / 2), 0:int(width / 2)] = \
-                    unprocessed_image[0::2, 0::2]  # (0,0): top left rotation == camera_polar_phase
+                height_q=int(height/0.5/r)
+                width_q=int(width/0.5/r)
+                output_quadview = np.zeros((height_q,width_q))
+                output_quadview[0:int(height_q / 2), 0:int(width_q / 2)] = \
+                    unprocessed_image[0::r, 0::r]  # (0,0): top left rotation == camera_polar_phase
                 # Top Right Quadrant =A
-                output_quadview[0:int(height / 2), int(width / 2):int(width )] = \
-                    unprocessed_image[0::2, 1::2]  # (0,1): top right rotation
+                output_quadview[0:int(height_q / 2), int(width_q / 2):int(width_q )] = \
+                    unprocessed_image[0::r, 1::r]  # (0,1): top right rotation
                 # Bottom Left Quadrant =D
-                output_quadview[int(height / 2):int(height), 0:int(width / 2)] = \
-                    unprocessed_image[1::2, 0::2]  # (1,0): bottom left rotation
+                output_quadview[int(height_q / 2):int(height_q), 0:int(width_q / 2)] = \
+                    unprocessed_image[1::r, 0::r]  # (1,0): bottom left rotation
                 # Bottom Right Quadrant =H
-                output_quadview[int(height / 2):int(height ), int(width / 2):int(width )] = \
-                        unprocessed_image[1::2, 1::2]  # (1,1): bottom right rotation
+                output_quadview[int(height_q / 2):int(height_q ), int(width_q / 2):int(width_q )] = \
+                        unprocessed_image[1::r, 1::r]  # (1,1): bottom right rotation
                 # Display QuadView
                 quadview_image = Image.fromarray(output_quadview) 
                   
         return Image.fromarray(output_quadview)
 
-    def _get_image_for_canvas2(self, frame):
+    def _get_image_for_canvas2(self, frame,r):
     # Generate a different image for canvas 2 (e.g., another part of the image)
         width = frame.image_buffer.shape[1]
         height = frame.image_buffer.shape[0]
-    
+        global hdl1
+        
+        
+        
+        
         with PolarizationProcessorSDK() as polarization_sdk:
             with polarization_sdk.create_polarization_processor() as polarization_processor:
                 unprocessed_image = frame.image_buffer.reshape(int(height), int(width))
                 unprocessed_image = unprocessed_image >> (self._bit_depth - 8)  # this is the raw image data
                 
-                V_norm = unprocessed_image[0::2, 0::2] / 255
-                A_norm = unprocessed_image[0::2, 1::2] / 255
-                D_norm = unprocessed_image[1::2, 0::2] / 255
-                H_norm = unprocessed_image[1::2, 1::2] / 255
+                V_norm = unprocessed_image[0::r, 0::r] / 255
+                A_norm = unprocessed_image[0::r, 1::r] / 255
+                D_norm = unprocessed_image[1::r, 0::r] / 255
+                H_norm = unprocessed_image[1::r, 1::r] / 255
                 
                 total = V_norm + A_norm + D_norm + H_norm
+                lenx,leny=total.shape                    
+                epsilon = 1e-7
+                for i1 in range(lenx):  
+                    for j1 in range(leny):
+                        if np.abs(total[i1][j1]) < epsilon:  # Check if the value is close to zero
+                            total[i1][j1] = epsilon
                 S0 = total / 2  # S0 normalization
                 S1 = (V_norm - H_norm) / (0.5 * total)  # S1 normalization
-                S2 = (A_norm - D_norm) / (0.5 * total)  # S2 normalization
+                S2 = (D_norm - A_norm) / (0.5 * total)  # S2 normalization
                 Dop=np.sqrt(S1**2+S2**2)/S0
                 # Apply the colormap
                 S0_colored = self.apply_colormap_hot(S0)
@@ -199,19 +307,32 @@ class ImageAcquisitionThread(threading.Thread):
                 S2_colored = self.apply_colormap(S2)
                 Dop_colored = self.apply_colormap_hot(Dop)
                 
+                height_q=int(height/0.5/r)
+                width_q=int(width/0.5/r)
                 # Create an output quadview image
-                output_quadview = np.zeros((int(height), int(width), 3), dtype=np.uint8)
+                output_quadview = np.zeros((height_q,width_q,3), dtype=np.uint8)
+                
+                vols_updated.wait()
+                # Use the global hdl1 to get voltage
+                
+                
                 # Top Left Quadrant = S0
-                output_quadview[0:int(height / 2), 0:int(width / 2)] = S0_colored
-                # Top Right Quadrant = S1
-                output_quadview[0:int(height / 2), int(width / 2):int(width )] = S1_colored
-                # Bottom Left Quadrant = dop
-                output_quadview[int(height / 2):int(height), 0:int(width / 2)] = Dop_colored  # Ensure grayscale
+                output_quadview[0:int(height_q / 2), 0:int(width_q / 2)] = S0_colored
+                tolerance = 1e-2
+                if abs(shared_vols[0] - 1.4) <= tolerance:
+                    # Top Right Quadrant = S1
+                    output_quadview[0:int(height_q / 2), int(width_q / 2):int(width_q )] = S1_colored
+                    print("S1 recieved",shared_vols[0],flush=True)
+                # elif abs(vol[1] - 1.1499) <= tolerance:
+                else:
+                    # Bottom Left Quadrant = s3
+                    output_quadview[int(height_q / 2):int(height_q), 0:int(width_q / 2)] = S1_colored
+                    print("S3 recieved",shared_vols[0],flush=True)# Ensure grayscale
                 # Bottom Right Quadrant = s2
-                output_quadview[int(height / 2):int(height ), int(width / 2):int(width )] = S2_colored  # Ensure grayscale
+                output_quadview[int(height_q / 2):int(height_q ), int(width_q / 2):int(width_q )] = S2_colored  # Ensure grayscale
                 
                 # Create and add the seismic color bar
-                color_bar_height = int(height)  # Height of the color bar
+                color_bar_height = int(height_q)  # Height of the color bar
                 color_bar_width = 40   # Width of the color bar
                 color_bar = np.zeros((color_bar_height, color_bar_width, 3), dtype=np.uint8)
                 
@@ -232,11 +353,11 @@ class ImageAcquisitionThread(threading.Thread):
                 color_bar_3d = np.tile(color_bar[:, np.newaxis, :], (1, color_bar_width, 1)) 
                 color_bar_3d_h = np.tile(color_bar_h[:, np.newaxis, :], (1, color_bar_width, 1)) 
                 
-                S0_Dop=np.vstack((output_quadview[0:int(height / 2), 0:int(width / 2)],output_quadview[int(height / 2):int(height), 0:int(width / 2)]))
-                S1_S2=np.vstack((output_quadview[0:int(height / 2), int(width / 2):int(width )] ,output_quadview[int(height / 2):int(height ), int(width / 2):int(width )]))
+                S0_Dop=np.vstack((output_quadview[0:int(height_q / 2), 0:int(width_q / 2)],output_quadview[int(height_q / 2):int(height_q), 0:int(width_q / 2)]))
+                S1_S2=np.vstack((output_quadview[0:int(height_q / 2), int(width_q / 2):int(width_q )] ,output_quadview[int(height_q / 2):int(height_q ), int(width_q / 2):int(width_q )]))
                 # Combine the quadview image and the color bar
                 output_quadview_with_colorbar = np.hstack((S0_Dop,hot_scale,color_bar_3d_h,border,S1_S2, hot_scale,color_bar_3d,hot_scale,hot_scale))
-            
+                vols_updated.clear()
         return Image.fromarray(output_quadview_with_colorbar)
 
    
@@ -268,21 +389,36 @@ class ImageAcquisitionThread(threading.Thread):
     def run(self):
         while not self._stop_event.is_set():
             self._pause_event.wait()
+            r=self._r
+            self.event.set()
             try:
                 frame = self._camera.get_pending_frame_or_null()
                 if frame is not None:
                     # Generate different images for each queue
-                    pil_image1 = self._get_image_for_canvas1(frame)
-                    pil_image2 = self._get_image_for_canvas2(frame)
-
+                    pil_image1 = self._get_image_for_canvas1(frame,r)
+                    pil_image2 = self._get_image_for_canvas2(frame,r)
+                    
+                    try:
+                        self._image_queue1.put_nowait(pil_image1)
+                    except Full:
+                        # If the queue is full, discard the oldest frame and add the new one
+                        self._image_queue1.get_nowait()  # Remove the oldest frame
+                        self._image_queue1.put_nowait(pil_image1)
+                    
+                    try:
+                        self._image_queue2.put_nowait(pil_image2)
+                    except Full:
+                        self._image_queue2.get_nowait()
+                        self._image_queue2.put_nowait(pil_image2)
                     # Put the distinct images into their respective queues
-                    self._image_queue1.put_nowait(pil_image1)
-                    self._image_queue2.put_nowait(pil_image2)
+                    # self._image_queue1.put_nowait(pil_image1)
+                    # self._image_queue2.put_nowait(pil_image2)
             except queue.Full:
                 pass
             except Exception as error:
                 print(f"Encountered error: {error}, image acquisition will stop.")
                 break
+            time.sleep(0.1)
         print("Image acquisition has stopped")
         if self._is_color:
             self._mono_to_color_processor.dispose()
@@ -317,14 +453,19 @@ if __name__ == "__main__":
         with sdk.open_camera(camera_list[0]) as camera:
 
             print("Generating app...")
-            
-            
+            # this r should be 2,4,8 any common factor between 2048 and 2448
+            r=4 # the resolution is the size of frame 2048*2448 devided by 0.5*r, new resolution is 2048/0.5r * 2448/0.5r
+            vols = [1.4, 1.15]
             root = tk.Tk()
             root.title(camera.name)
-
-            image_acquisition_thread = ImageAcquisitionThread(camera)
+            event = threading.Event()
+            
+            klc_thread = KLCThread( vols, event)
+            
+            image_acquisition_thread = ImageAcquisitionThread(camera,r,event)
             
             canvas_width, canvas_height=800,800
+            
             # Create two canvas widgets with fixed sizes
             canvas1 = LiveViewCanvas(parent=root, image_queue=image_acquisition_thread.get_output_queue1(), canvas_width=canvas_width, canvas_height=canvas_height)
             canvas2 = LiveViewCanvas(parent=root, image_queue=image_acquisition_thread.get_output_queue2(), canvas_width=canvas_width+270, canvas_height=canvas_height)
@@ -349,17 +490,29 @@ if __name__ == "__main__":
             tk.Label(root, text="D", font=big_font, fg="white", bg="black").place(x=10, y=canvas_height/2+10)
             tk.Label(root, text="A", font=big_font, fg="white", bg="black").place(x=canvas_width/2+10, y=10)
 
-            tk.Label(root, text="S1", font=big_font, fg="white", bg="black").place(x=canvas_width*3/2+120, y=10)
+            tk.Label(root, text="S1_1.4V", font=big_font, fg="white", bg="black").place(x=canvas_width*3/2+120, y=10)
             tk.Label(root, text="S0", font=big_font, fg="white", bg="black").place(x=canvas_width+20, y=10)
             tk.Label(root, text="S2", font=big_font, fg="white", bg="black").place(x=canvas_width*3/2+120, y=canvas_height/2+10)
-            tk.Label(root, text="DoP", font=big_font, fg="white", bg="black").place(x=canvas_width+20, y=canvas_height/2+10)
+            tk.Label(root, text="S3_1.15V", font=big_font, fg="white", bg="black").place(x=canvas_width+20, y=canvas_height/2+10)
+            
+            
+            if r==2:
+                x1=canvas_width*3/2+61
+                x2=2*canvas_width+166
+            elif r==4:
+                x1=int(800+0.5*1070/(2048/0.5/r+270)*(2048/0.5/r))
+                x2=int(820+1070/(2448/0.5/r+270)*(2448/0.5/r))
+                
+            else:
+                x1=1150
+                x2=1600
             
             parent_bg = root.cget("bg")
-            tk.Label(root, text="+1", font=font.Font(size=15), fg="black",bg=parent_bg ).place(x=canvas_width*3/2+61, y=0)
-            tk.Label(root, text="+0", font=font.Font(size=15), fg="black",bg=parent_bg).place(x=canvas_width*3/2+61, y=canvas_height-30)
+            tk.Label(root, text="+1", font=font.Font(size=15), fg="black",bg=parent_bg ).place(x=x1, y=0)
+            tk.Label(root, text="+0", font=font.Font(size=15), fg="black",bg=parent_bg).place(x=x1, y=canvas_height-30)
             
-            tk.Label(root, text="+1", font=font.Font(size=15), fg="black",bg=parent_bg).place(x=2*canvas_width+166, y=0)
-            tk.Label(root, text="-1", font=font.Font(size=15), fg="black",bg=parent_bg).place(x=2*canvas_width+167, y=canvas_height-30)
+            tk.Label(root, text="+1", font=font.Font(size=15), fg="black",bg=parent_bg).place(x=x2, y=0)
+            tk.Label(root, text="-1", font=font.Font(size=15), fg="black",bg=parent_bg).place(x=x2+1, y=canvas_height-30)
             # Add a button to save the canvas
             
             
@@ -370,14 +523,16 @@ if __name__ == "__main__":
 
             print("Starting image acquisition thread...")
             image_acquisition_thread.start()
+            klc_thread.start()
 
             print("App starting")
             root.mainloop()
-
+            
             print("Waiting for image acquisition thread to finish...")
             image_acquisition_thread.stop()
             image_acquisition_thread.join()
-
+            klc_thread.stop()
+            klc_thread.join()
             print("Closing resources...")
 
     print("App terminated. Goodbye!")
