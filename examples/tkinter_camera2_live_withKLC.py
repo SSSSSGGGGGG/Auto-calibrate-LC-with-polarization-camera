@@ -255,7 +255,7 @@ class ImageAcquisitionThread(threading.Thread):
                 height_q=int(height/0.5/r)
                 width_q=int(width/0.5/r)
                 output_quadview = np.zeros((height_q,width_q))
-                # Top Right Quadrant =V
+                # Top Right Quadrant =H
                 output_quadview[0:int(height_q / 2), 0:int(width_q / 2)] = \
                      unprocessed_image[1::r, 0::r]  # (1,0): bottom left rotation
                 # Top Right Quadrant =A
@@ -264,7 +264,7 @@ class ImageAcquisitionThread(threading.Thread):
                 # Bottom Left Quadrant =D
                 output_quadview[int(height_q / 2):int(height_q), 0:int(width_q / 2)] = \
                     unprocessed_image[0::r, 0::r]  # (0,0): top left rotation == camera_polar_phase
-                # Bottom Right Quadrant =H
+                # Bottom Right Quadrant =V
                 output_quadview[int(height_q / 2):int(height_q ), int(width_q / 2):int(width_q )] = \
                         unprocessed_image[0::r, 1::r]  # (0,1): top right rotation
                 # Display QuadView
@@ -287,8 +287,8 @@ class ImageAcquisitionThread(threading.Thread):
                 unprocessed_image = unprocessed_image >> (self._bit_depth - 8)  # this is the raw image data
                 
                 D_norm = unprocessed_image[0::r, 0::r] / 255
-                H_norm = unprocessed_image[0::r, 1::r] / 255
-                V_norm = unprocessed_image[1::r, 0::r] / 255
+                V_norm = unprocessed_image[0::r, 1::r] / 255
+                H_norm = unprocessed_image[1::r, 0::r] / 255
                 A_norm = unprocessed_image[1::r, 1::r] / 255
                 
                 total = V_norm + A_norm + D_norm + H_norm
@@ -456,7 +456,7 @@ if __name__ == "__main__":
             print("Generating app...")
             # this r should be 2,4,8 any common factor between 2048 and 2448
             r=4 # the resolution is the size of frame 2048*2448 devided by 0.5*r, new resolution is 2048/0.5r * 2448/0.5r
-            vols = [1.4, 1.15]
+            vols = [0]#, 1.15
             root = tk.Tk()
             root.title(camera.name)
             event = threading.Event()
@@ -486,15 +486,15 @@ if __name__ == "__main__":
 
             
             big_font = font.Font(size=16)
-            tk.Label(root, text="V", font=big_font, fg="white", bg="black").place(x=10, y=10)
-            tk.Label(root, text="H", font=big_font, fg="white", bg="black").place(x=canvas_width/2+10, y=canvas_height/2+10)
+            tk.Label(root, text="H", font=big_font, fg="white", bg="black").place(x=10, y=10)
+            tk.Label(root, text="V", font=big_font, fg="white", bg="black").place(x=canvas_width/2+10, y=canvas_height/2+10)
             tk.Label(root, text="D", font=big_font, fg="white", bg="black").place(x=10, y=canvas_height/2+10)
             tk.Label(root, text="A", font=big_font, fg="white", bg="black").place(x=canvas_width/2+10, y=10)
 
-            tk.Label(root, text="S1_1.4V", font=big_font, fg="white", bg="black").place(x=canvas_width*3/2+120, y=10)
+            tk.Label(root, text=f"S1_{vols[0]}V", font=big_font, fg="white", bg="black").place(x=canvas_width*3/2+120, y=10)
             tk.Label(root, text="S0", font=big_font, fg="white", bg="black").place(x=canvas_width+20, y=10)
             tk.Label(root, text="S2", font=big_font, fg="white", bg="black").place(x=canvas_width*3/2+120, y=canvas_height/2+10)
-            tk.Label(root, text="S3_1.15V", font=big_font, fg="white", bg="black").place(x=canvas_width+20, y=canvas_height/2+10)
+            tk.Label(root, text=f"S3_{vols[0]}V", font=big_font, fg="white", bg="black").place(x=canvas_width+20, y=canvas_height/2+10)
             
             
             if r==2:
