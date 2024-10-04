@@ -231,6 +231,7 @@ class ImageAcquisitionThread(threading.Thread):
                 height_q=int(height/0.5/r)
                 width_q=int(width/0.5/r)
                 output_quadview = np.zeros((height_q,width_q))
+                # Top Right Quadrant =V
                 output_quadview[0:int(height_q / 2), 0:int(width_q / 2)] = \
                     unprocessed_image[0::r, 0::r]  # (0,0): top left rotation == camera_polar_phase
                 # Top Right Quadrant =A
@@ -416,7 +417,7 @@ if __name__ == "__main__":
             print("Generating app...")
             # this r should be 2,4,8 any common factor between 2048 and 2448
             r=4 # the resolution is the size of frame 2048*2448 devided by 0.5*r, new resolution is 2048/0.5r * 2448/0.5r
-            vols = [1.4, 1.15]
+            vols = [1.65] #, 1.15
             root = tk.Tk()
             root.title(camera.name)
             event = threading.Event()
@@ -448,7 +449,7 @@ if __name__ == "__main__":
             tk.Label(root, text="D", font=big_font, fg="white", bg="black").place(x=10, y=canvas_height/2+10)
             tk.Label(root, text="A", font=big_font, fg="white", bg="black").place(x=canvas_width/2+10, y=10)
 
-            tk.Label(root, text="S1", font=big_font, fg="white", bg="black").place(x=canvas_width*3/2+120, y=10)
+            tk.Label(root, text=f"S1/S3,{vols[0]}", font=big_font, fg="white", bg="black").place(x=canvas_width*3/2+120, y=10)
             tk.Label(root, text="S0", font=big_font, fg="white", bg="black").place(x=canvas_width+20, y=10)
             tk.Label(root, text="S2", font=big_font, fg="white", bg="black").place(x=canvas_width*3/2+120, y=canvas_height/2+10)
             tk.Label(root, text="DoP", font=big_font, fg="white", bg="black").place(x=canvas_width+20, y=canvas_height/2+10)

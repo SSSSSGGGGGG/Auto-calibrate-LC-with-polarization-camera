@@ -5,7 +5,19 @@ Created on Wed Feb 14 11:28:11 2024
 @author: Laboratorio
 """
 
+try:
+    # if on Windows, use the provided setup script to add the DLLs folder to the PATH
+    from windows_setup import configure_path
+    configure_path()
+except ImportError:
+    configure_path = None
+    
+import numpy as np
+from PIL import Image, ImageDraw, ImageFont
 
+from thorlabs_tsi_sdk.tl_camera import TLCameraSDK
+from thorlabs_tsi_sdk.tl_camera_enums import SENSOR_TYPE
+from thorlabs_tsi_sdk.tl_polarization_processor import PolarizationProcessorSDK
 import initialKLCfor1
 import closeKLCfor1
 import numpy as np
@@ -31,7 +43,7 @@ print("KLC´s handle:",handle)
 # x=np.arange(0,0.8,0.1)
 # y=np.arange(0.8,2.1,0.01)
 # z=np.arange(2.1,5.1,0.1)
-vols2=np.arange(0,2,0.5)
+vols2=np.arange(0,5,0.1)
 # config value will be vavriable for judging the type of configuration.
 f=1000  # !!!!! set the frequency to the enabled channel
 mode=2 # 1 continuous; 2 cycle.
@@ -57,8 +69,13 @@ async def sendVoltage(vols):
     if(klcStartLUTOutput(hdl)<0):
         print("klcStartLUTOutput failed")
     
-    asyncio.sleep(1)
+    # await asyncio.sleep(1)
     await task
+    
+def my_count(s, i=[0]):
+    #print(s)
+    i[0] += 1
+    return i[0]
 async def camera():
     with TLCameraSDK() as camera_sdk, PolarizationProcessorSDK() as polarization_sdk:
         available_cameras = camera_sdk.discover_available_cameras()
@@ -147,23 +164,18 @@ async def camera():
                 draw.text((1224,1024), text1, (255,255,255),font=font)
                 draw.text((0,1024), text3, (255,255,255),font=font)
                 draw.text((1224,0), text4, (255,255,255),font=font)
-                img.save("pAt-45.tif")
+                k=my_count(1)               
+                img.save(f"PSG_{k}.tif")
       
    
-def main():  
-         
-    length=len(vols2) #!!!!
-    count=1
-    while(count<length+1):  
-        vols1=[vols2[count-1]]   
-         
-        asyncio.run(sendVoltage(vols1))
-        # with asyncio.Runner() as runner:
-        #     runner.run(sendVoltage(vols1))
-        count+=1
+async def main():  
+    length = len(vols2)
+    for count in range(length):
+        vols1 = [vols2[count]]
+        await sendVoltage(vols1)  # Awaiting the sendVoltage call
 
-if __name__=="__main__":
-    main()
+if __name__ == "__main__":
+    asyncio.run(main())
 
 # =============================================================================
 #                    close all the devices
