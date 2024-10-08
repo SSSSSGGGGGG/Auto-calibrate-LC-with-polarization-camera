@@ -97,7 +97,7 @@ Synchronize KLC and polarization camera, which is an live display.
 """
 
 vols_updated = threading.Event()
-shared_vols = [5.0]
+shared_vols = [0.0]
 class KLCThread(threading.Thread):
     def __init__(self,event):
         super(KLCThread,self).__init__()
@@ -337,7 +337,7 @@ class ImageAcquisitionThread(threading.Thread):
                 # Top Left Quadrant = S0
                 output_quadview[0:int(height_q / 2), 0:int(width_q / 2)] = S0_colored
                 tolerance = 1e-2
-                if abs(shared_vols[0] - 5) <= tolerance:
+                if abs(shared_vols[0] - 5) <= tolerance or abs(shared_vols[0] - 0) <= tolerance:
                     # Top Right Quadrant = S1
                     output_quadview[0:int(height_q / 2), int(width_q / 2):int(width_q )] = S1_colored
                     print("S1 recieved",shared_vols[0],flush=True)
