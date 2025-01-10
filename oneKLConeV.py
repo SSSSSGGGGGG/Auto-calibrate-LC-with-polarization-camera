@@ -27,7 +27,7 @@ print("KLC´s handle:",handle)
 # =============================================================================
 # 
 # =============================================================================
-vols2=[1.2,2,3]
+vols2=[3.6]
 # x=np.arange(0,0.8,0.1)
 # y=np.arange(0.8,2.1,0.01)
 # z=np.arange(2.1,5.1,0.1)
@@ -58,7 +58,7 @@ def sendVoltage(vols):
 
    if(klcStartLUTOutput(hdl)<0):
        print("klcStartLUTOutput failed")
-   # command=input("Please press any key to close the current setup: ")
+   command=input("Please press any key to close the current setup: ")
    time.sleep(1)
    
 

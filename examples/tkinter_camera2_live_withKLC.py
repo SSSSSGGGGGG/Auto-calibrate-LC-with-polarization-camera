@@ -95,14 +95,16 @@ This class is to control LC, by sending voltage to it.
 Synchronize KLC and polarization camera, which is an live display.
 
 """
+
 vols_updated = threading.Event()
 shared_vols = [0.0]
 class KLCThread(threading.Thread):
-    def __init__(self,vols,event):
+    def __init__(self,event):
         super(KLCThread,self).__init__()
         global hdl1
+        self.current_voltage = shared_vols[0]
         self.KLC=klcListDevices()
-        self.length=len(vols)
+        # self.length=len(vols)
         
         
         if(len(self.KLC)<=0):
@@ -124,12 +126,14 @@ class KLCThread(threading.Thread):
         f_set=1000  # !!!!! set the frequency to the enabled channel
         mode=1 # 1 continuous; 2 cycle.
         cyclenumber=1 #number of cycles 1~ 2147483648.s
-        delay=1000  # !!! the sample intervals[ms] 1~ 2147483648
+        delay=1  # !!! the sample intervals[ms] 1~ 2147483648
         precycle_rest=0 
-        count=0
-        while(count<self.length):  
-            vols1=[vols[count]] 
+        
+        while not self._stop_event.is_set(): 
+            
+            vols1=[self.current_voltage] 
             shared_vols[0] = vols1[0]
+            
             vols_updated.set()
             print("KLC",vols1,flush=True)
             self.volarr =  (c_float * len(vols1))(*vols1)
@@ -145,9 +149,10 @@ class KLCThread(threading.Thread):
             
             if(klcStartLUTOutput(hdl1)<0):
                 print("klcStartLUTOutput failed")
-            # time.sleep(1)
-            count+=1
-        
+            
+            
+    def update_voltage(self, new_voltage):
+        self.current_voltage = new_voltage  # Update the current voltage    
         
         
     def turnOffKLC(self):
@@ -180,9 +185,22 @@ class KLCThread(threading.Thread):
                 print("Warning:", ex)
             self.event.wait()  # Wait until the event is set
             self.sendVoltages()  # Send voltages
-             
+            self.event.clear()  # Reset the event for the next trigger 
             time.sleep(0.1)
+            
+            
 
+def vol_input():
+    
+    number = entry.get()
+    try:
+        num_value = float(number)
+        klc_thread.update_voltage(num_value)
+        print("New voltage is received" ,flush=True)
+        indicator_label.config(text=f"{num_value }V", fg="red")   
+    except ValueError:
+        # label.config(text="Invalid number!")
+        print("Invalid input" ,flush=True)
 """ ImageAcquisitionThread
 
 This class derives from threading.Thread and is given a TLCamera instance during initialization. When started, the 
@@ -192,7 +210,6 @@ so users will still need to setup and control the camera from a different thread
 time for the thread to stop.
 
 """
-
 
 class ImageAcquisitionThread(threading.Thread):
 
@@ -222,8 +239,8 @@ class ImageAcquisitionThread(threading.Thread):
         self._camera.image_poll_timeout_ms = 0
 
         # Create two separate queues for each canvas
-        self._image_queue1 = queue.Queue(maxsize=5)
-        self._image_queue2 = queue.Queue(maxsize=5)
+        self._image_queue1 = queue.Queue(maxsize=10)
+        self._image_queue2 = queue.Queue(maxsize=10)
         
         self.event = event
         self._stop_event = threading.Event()
@@ -320,7 +337,7 @@ class ImageAcquisitionThread(threading.Thread):
                 # Top Left Quadrant = S0
                 output_quadview[0:int(height_q / 2), 0:int(width_q / 2)] = S0_colored
                 tolerance = 1e-2
-                if abs(shared_vols[0] - 5) <= tolerance:
+                if abs(shared_vols[0] - 5) <= tolerance or abs(shared_vols[0] - 0) <= tolerance:
                     # Top Right Quadrant = S1
                     output_quadview[0:int(height_q / 2), int(width_q / 2):int(width_q )] = S1_colored
                     print("S1 recieved",shared_vols[0],flush=True)
@@ -456,12 +473,12 @@ if __name__ == "__main__":
             print("Generating app...")
             # this r should be 2,4,8 any common factor between 2048 and 2448
             r=4 # the resolution is the size of frame 2048*2448 devided by 0.5*r, new resolution is 2048/0.5r * 2448/0.5r
-            vols = [5]#, 1.15
+            # vols = 5.0#, 1.15
             root = tk.Tk()
             root.title(camera.name)
             event = threading.Event()
             
-            klc_thread = KLCThread( vols, event)
+            klc_thread = KLCThread(event)
             
             image_acquisition_thread = ImageAcquisitionThread(camera,r,event)
             
@@ -475,14 +492,24 @@ if __name__ == "__main__":
             canvas1.pack(side="left", fill="both", expand=True)
             canvas2.pack(side="right", fill="both", expand=True)
             
+            entry = tk.Entry(root)
+            entry.place(x=1825, y=10)
+            indicator_label = tk.Label(root, text="", font=('Arial', 15), fg="white", bg="white")
+            indicator_label.place(x=350, y=10)
+            entry.bind("<Return>", lambda event: vol_input())
+            
+            # Create a button to submit the input
+            input_button = tk.Button(root, text="Submit", command=vol_input)
+            input_button.place(x=1825, y=50)
+            
             # Add a button to save the canvas
             save_button = tk.Button(root, text="Save", command=lambda: save_canvas_as_image(canvas1))
-            save_button.place(x=1825, y=50)  # You can also use place() if you want to control the position further
+            save_button.place(x=1825, y=400)  # You can also use place() if you want to control the position further
             
             pause_button = tk.Button(root, text="Pause", command=image_acquisition_thread.pause)
-            pause_button.place(x=1825, y=10)
+            pause_button.place(x=1825, y=450)
             resume_button = tk.Button(root, text="Resume", command=image_acquisition_thread.resume)
-            resume_button.place(x=1825, y=90)
+            resume_button.place(x=1825, y=500)
 
             
             big_font = font.Font(size=16)
@@ -491,10 +518,10 @@ if __name__ == "__main__":
             tk.Label(root, text="D", font=big_font, fg="white", bg="black").place(x=10, y=canvas_height/2+10)
             tk.Label(root, text="A", font=big_font, fg="white", bg="black").place(x=canvas_width/2+10, y=10)
 
-            tk.Label(root, text=f"S1_{vols[0]}V", font=big_font, fg="white", bg="black").place(x=canvas_width*3/2+120, y=10)
+            tk.Label(root, text=f"S1", font=big_font, fg="white", bg="black").place(x=canvas_width*3/2+120, y=10)
             tk.Label(root, text="S0", font=big_font, fg="white", bg="black").place(x=canvas_width+20, y=10)
             tk.Label(root, text="S2", font=big_font, fg="white", bg="black").place(x=canvas_width*3/2+120, y=canvas_height/2+10)
-            tk.Label(root, text=f"S3_{vols[0]}V", font=big_font, fg="white", bg="black").place(x=canvas_width+20, y=canvas_height/2+10)
+            tk.Label(root, text=f"S3", font=big_font, fg="white", bg="black").place(x=canvas_width+20, y=canvas_height/2+10)
             
             
             if r==2:
@@ -534,6 +561,7 @@ if __name__ == "__main__":
             image_acquisition_thread.join()
             klc_thread.stop()
             klc_thread.join()
+            # root.destroy()
             print("Closing resources...")
 
     print("App terminated. Goodbye!")

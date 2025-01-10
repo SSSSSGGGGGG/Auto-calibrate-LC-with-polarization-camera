@@ -11,6 +11,9 @@ import matplotlib.pyplot as plt
 import os
 # import processSeperatedImagesCP as CP
 import matplotlib as mpl
+import time
+
+startT=time.time()
 
 os.chdir("C:/Users/Laboratorio/AutoMeasureLCwithPolorizationCamera")
 imName=[0] #,[0,16,32,48,64,80,96,112,128,144,160,176,192,208,224,240,255]
@@ -45,7 +48,7 @@ matrix_QWP=np.array([[1, -1j], [-1j, 1] ])
 s3_L=np.zeros_like(norm_0)
 for i in range (1024):
     for j in range (1223): 
-        vector_L[0][0]=np.sqrt(norm_90[i][j])
+        vector_L[0][0]=np.sqrt(norm_45[i][j])
         vector_L[1][0]=0
         s3_1=np.dot(matrix_QWP, vector_L)
         s3_2=np.vdot(s3_1, s3_1)
@@ -57,7 +60,7 @@ s3_R=np.zeros_like(norm_0)
 for i in range (1024):
     for j in range (1223): 
         vector_R[0][0]=0
-        vector_R[1][0]=np.sqrt(norm_0[i][j])
+        vector_R[1][0]=np.sqrt(norm_n45[i][j])
         s3_11=np.dot(matrix_QWP, vector_R)
         s3_22=np.vdot(s3_11, s3_11)
         s3_R[i][j]=s3_22
@@ -74,7 +77,7 @@ for i in range (1024):
 s0_H_V=norm_0+norm_90
 s0_D_A=norm_45+norm_n45
 S0_avg=(norm_0+norm_90+norm_45+norm_n45)/2
-S3=s3_L/2-s3_R/2
+S3=s3_R/2-s3_L/2
 
 s0=S0_avg/2
 s1=(norm_90-norm_0)/S0_avg
@@ -131,14 +134,17 @@ plt.grid(which='minor',linestyle=':', linewidth='0.1', color='gray')
 plt.figure(10)
 plt.imshow(s1,vmin=-1,vmax=1,cmap='seismic')
 plt.colorbar()
-plt.title("S1")
-plt.minorticks_on()
-plt.grid(which='minor',linestyle=':', linewidth='0.1', color='gray')  
-
-
-plt.figure(11)
-plt.imshow(s2,vmin=-1,vmax=1,cmap='seismic')
-plt.colorbar()
 plt.title("S2")
 plt.minorticks_on()
 plt.grid(which='minor',linestyle=':', linewidth='0.1', color='gray')  
+
+endT=time.time()
+
+print(f"duration: {endT-startT}s")
+
+# plt.figure(11)
+# plt.imshow(s2,vmin=-1,vmax=1,cmap='seismic')
+# plt.colorbar()
+# plt.title("S2")
+# plt.minorticks_on()
+# plt.grid(which='minor',linestyle=':', linewidth='0.1', color='gray')  
