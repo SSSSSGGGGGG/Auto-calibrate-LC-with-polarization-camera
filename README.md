@@ -1,0 +1,2 @@
+This project automates a polarization camera with one or multiple LCRs for showing the polarization state of the sample and the corresponding Stokes parameters in real time. 
+On the other hand, this project also automates the optical systems: one existing polarimetry system based on Muller matrix analysis and the calibration of a liquid crystal (LC) retarder (or SLM) using a polarization camera (or power meter). The goal is to take measurements automatically and synchronize optical devices logically at high precision for analyzing the polarization state of samples.
